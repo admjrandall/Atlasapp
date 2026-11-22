@@ -1,4 +1,15 @@
-# Atlas 0.3 — build ledger (Nov 22 2026)
+# Atlas 0.4 — build ledger (Nov 22 2026)
+
+## 0.4 changes (UI review pass)
+- Phone map shows real content (faces, documents, checkable tasks, ideas, projects, milestones) instead of count tiles; same neighbourhood layout as the Fold.
+- Phone panel opens on "Why this matters now"; reasons about tasks are checkable in place; next steps no longer repeat them.
+- Removed repetition: focus pill, per-row "Example", duplicate type/status chips, explainer subtitles and footnotes. One "Example data" chip removes the example workspace.
+- Search bar is a search bar (magnifier, voice); no sparkle/send/attach.
+- Capture is a sheet over the current screen; Save sits under the text box; 5 common types plus "More".
+- Controls: hamburger menu, + Capture in the phone top bar, Settings gear on wide screens, Map/Insights in the same place on every device, map options (focus, list view, zoom) in one labeled menu, list pages get a labeled "New …" button.
+- Naming: "Documents" everywhere. Dates read as words ("Fri, Nov 27").
+- Fixed: "1 connections", Tasks filters (Open/Overdue/Today/Upcoming/Blocked/Done), search excerpts cut mid-word, stale snackbar, clipped labels, mid-word line breaks, tabs hidden off-screen (now wrap).
+
 
 Honest status of this build. "Verified" means covered by an automated test or inspected in a rendered screenshot; nothing here has been run on a physical Fold 6 yet.
 

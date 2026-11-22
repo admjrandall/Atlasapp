@@ -97,19 +97,32 @@ fun Pill(text: String, leading: androidx.compose.ui.graphics.vector.ImageVector?
     else Surface(shape = CircleShape, color = container, contentColor = content, modifier = modifier, content = inner)
 }
 
+fun plural(n: Int, one: String, many: String = one + "s") = "$n ${if (n == 1) one else many}"
+
+/** One line under a title: type, then the single most useful fact. Example-ness is shown once per screen, not per row. */
 fun typeLine(o: KObject, snap: Snapshot? = null): String = buildString {
     append(o.type.label)
     when (o.type) {
         ObjType.PROJECT -> o.projectStatus?.let { append(" · ${it.label}") }
         ObjType.PERSON -> listOf(o.role, o.org).filter { it.isNotBlank() }.joinToString(", ").takeIf { it.isNotEmpty() }?.let { append(" · $it") }
-        ObjType.TASK -> append(if (o.done) " · Done" else o.due?.let { " · ${relDate(it)}" } ?: "").also { if (o.blocked && !o.done) append(" · Blocked") }
+        ObjType.TASK -> { if (o.done) append(" · Done") else { o.due?.let { append(" · ${relDate(it)}") }; if (o.blocked) append(" · Blocked") } }
         ObjType.EVENT -> o.eventDate?.let { append(" · ${relDate(it)}") }
-        ObjType.DOCUMENT, ObjType.IMAGE -> if (o.vaultFile.isBlank() && o.origin == Origin.EXAMPLE) append(" · example, no file") else if (o.sizeBytes > 0) append(" · ${size(o.sizeBytes)}")
+        ObjType.DOCUMENT, ObjType.IMAGE -> {
+            val kind = when { o.mime == "application/pdf" -> "PDF"; o.mime.startsWith("image/") -> "Image"; o.mime.startsWith("text/") -> "Text"; else -> "" }
+            if (kind.isNotEmpty() && kind != o.type.label) append(" · $kind")
+            if (o.vaultFile.isBlank()) append(" · no file") else if (o.sizeBytes > 0) append(" · ${size(o.sizeBytes)}")
+        }
         ObjType.LINK -> o.url.takeIf { it.isNotBlank() }?.let { append(" · ${it.removePrefix("https://").removePrefix("http://").substringBefore('/')}") }
         else -> {}
     }
-    if (o.origin == Origin.EXAMPLE && o.type !in setOf(ObjType.DOCUMENT, ObjType.IMAGE)) append(" · Example")
 }
+
+fun shortDate(d: LocalDate, today: LocalDate = LocalDate.now()): String =
+    d.format(DateTimeFormatter.ofPattern(if (d.year == today.year) "MMM d" else "MMM d, yyyy"))
+
+/** “Fri, Nov 27” — used wherever a weekday alone would be ambiguous. */
+fun dayDate(d: LocalDate, today: LocalDate = LocalDate.now()): String =
+    d.format(DateTimeFormatter.ofPattern(if (d.year == today.year) "EEE, MMM d" else "EEE, MMM d, yyyy"))
 
 fun size(b: Long) = when { b < 1024 -> "$b B"; b < 1024 * 1024 -> "${b / 1024} KB"; else -> "%.1f MB".format(b / 1048576.0) }
 
@@ -186,13 +199,11 @@ fun AtlasMark(size: Dp = 28.dp) {
 }
 
 @Composable
-fun AtlasWordmark(modifier: Modifier = Modifier, onClick: (() -> Unit)? = null, label: String = "Atlas") {
-    Row(modifier.clip(CircleShape).then(if (onClick != null) Modifier.clickable(role = Role.Button, onClickLabel = "Open menu", onClick = onClick) else Modifier)
-        .heightIn(min = 48.dp).padding(horizontal = 6.dp), verticalAlignment = Alignment.CenterVertically) {
+fun AtlasWordmark(modifier: Modifier = Modifier) {
+    Row(modifier.heightIn(min = 48.dp).padding(horizontal = 4.dp).semantics(mergeDescendants = true) { contentDescription = "Atlas" }, verticalAlignment = Alignment.CenterVertically) {
         AtlasMark()
         Spacer(Modifier.width(10.dp))
         Text("ATLAS", style = MaterialTheme.typography.titleMedium.copy(letterSpacing = 5.sp, fontWeight = FontWeight.SemiBold), color = Atlas.DeepPlum)
-        if (onClick != null) Icon(Icons.Outlined.ExpandMore, null, tint = Atlas.SecondaryText, modifier = Modifier.size(18.dp))
     }
 }
 

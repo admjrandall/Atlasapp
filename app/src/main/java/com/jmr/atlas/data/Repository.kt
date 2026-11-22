@@ -245,27 +245,27 @@ class Repository(context: Context, dbName: String? = "atlas.db") {
         val open = s.ofType(ObjType.TASK).filter { !it.done && inScope(it) }
         val out = mutableListOf<Insight>()
         open.filter { it.due != null && it.due < today }.takeIf { it.isNotEmpty() }?.let { l ->
-            out += Insight("overdue", "${l.size} overdue ${if (l.size == 1) "task" else "tasks"}", l.sortedBy { it.due }.take(3).joinToString(" · ") { "${it.title} (due ${it.due})" }, l.map { it.id }, scopeName)
+            out += Insight("overdue", "${l.size} overdue ${if (l.size == 1) "task" else "tasks"}", "", l.sortedBy { it.due }.map { it.id }, scopeName)
         }
         open.filter { it.due != null && !it.due.isBefore(today) && !it.due.isAfter(today.plusDays(3)) }.takeIf { it.isNotEmpty() }?.let { l ->
-            out += Insight("soon", "Due in the next 3 days", l.sortedBy { it.due }.joinToString(" · ") { it.title }, l.map { it.id }, scopeName)
+            out += Insight("soon", "Due in the next 3 days", "", l.sortedBy { it.due }.map { it.id }, scopeName)
         }
         open.filter { it.title.startsWith("Expect ", true) }.takeIf { it.isNotEmpty() }?.let { l ->
-            out += Insight("waiting", "Waiting on ${l.size}", l.joinToString(" · ") { it.title.removePrefix("Expect ") }, l.map { it.id }, scopeName)
+            out += Insight("waiting", "Waiting on ${if (l.size == 1) "1 thing" else "${l.size} things"}", "", l.map { it.id }, scopeName)
         }
         if (scope == null) {
             val caps = s.captures.filter { c -> s.pending().any { it.captureId == c.id } }
-            if (caps.isNotEmpty()) out += Insight("review", "${s.pending().size} suggestions to review", "From ${caps.size} ${if (caps.size == 1) "capture" else "captures"}. Suggestions are not facts until you accept them.", caps.mapNotNull { it.noteId ?: it.attachmentId }, scopeName)
+            if (caps.isNotEmpty()) out += Insight("review", "${s.pending().size} suggestions to review", "From ${caps.size} ${if (caps.size == 1) "capture" else "captures"}", caps.mapNotNull { it.noteId ?: it.attachmentId }, scopeName)
         }
         s.ofType(ObjType.PROJECT).filter { it.projectStatus == ProjectStatus.ACTIVE && inScope(it) }
             .filter { p -> s.neighbours(p.id, false).none { it.first.type == ObjType.TASK && !it.first.done } }
-            .forEach { p -> out += Insight("nonext:${p.id}", "${p.title} has no next step", "Active project with no open task connected to it.", listOf(p.id), scopeName) }
+            .forEach { p -> out += Insight("nonext:${p.id}", "${p.title} has no next step", "No open task is connected to this active project.", listOf(p.id), scopeName) }
         s.live.filter { (it.type == ObjType.DOCUMENT || it.type == ObjType.IMAGE) && inScope(it) && s.relationsOf(it.id).isEmpty() }.takeIf { it.isNotEmpty() }?.let { l ->
-            out += Insight("orphans", "${l.size} unconnected ${if (l.size == 1) "file" else "files"}", l.take(3).joinToString(" · ") { it.title }, l.map { it.id }, scopeName)
+            out += Insight("orphans", "${l.size} unconnected ${if (l.size == 1) "file" else "files"}", "", l.map { it.id }, scopeName)
         }
         if (scope == null) {
             s.ofType(ObjType.PERSON).groupBy { it.title.lowercase().replace(Regex("[^a-z ]"), "").trim() }.values.filter { it.size > 1 }.forEach { g ->
-                out += Insight("dup:${g.first().title.lowercase()}", "Possible duplicate: ${g.first().title}", "${g.size} people share this name. Open them to merge or tell them apart.", g.map { it.id }, scopeName)
+                out += Insight("dup:${g.first().title.lowercase()}", "Possible duplicate: ${g.first().title}", "${g.size} people share this name.", g.map { it.id }, scopeName)
             }
         }
         val dismissed = prefs.getStringSet("dismissed", emptySet())!!
@@ -282,18 +282,19 @@ class Repository(context: Context, dbName: String? = "atlas.db") {
         val nb = s.neighbours(id, false).map { it.first }
         val out = mutableListOf<ContextLine>()
         val tasks = (nb + listOf(o)).filter { it.type == ObjType.TASK && !it.done }
-        tasks.filter { it.due != null && it.due < today }.forEach { out += ContextLine("“${it.title}” is overdue (due ${fmt(it.due!!, today)}).", listOf(it.id)) }
-        tasks.filter { it.due != null && !it.due.isBefore(today) }.minByOrNull { it.due!! }?.let { out += ContextLine("Next deadline: “${it.title}” ${fmt(it.due!!, today)}.", listOf(it.id)) }
-        tasks.filter { it.title.startsWith("Expect ", true) }.forEach { t -> out += ContextLine("Waiting on: ${t.title.removePrefix("Expect ")}${t.due?.let { " (" + fmt(it, today) + ")" } ?: ""}.", listOf(t.id)) }
-        o.targetDate?.let { if (!it.isBefore(today)) out += ContextLine("Target date ${fmt(it, today)}.", listOf(o.id)) }
+        tasks.filter { it.due != null && it.due < today }.forEach { out += ContextLine("${it.title} — was due ${fmt(it.due!!, today)}", listOf(it.id)) }
+        tasks.filter { it.due != null && !it.due.isBefore(today) && !it.title.startsWith("Expect ", true) }.minByOrNull { it.due!! }
+            ?.let { out += ContextLine("${it.title} — due ${fmt(it.due!!, today)}", listOf(it.id)) }
+        tasks.filter { it.title.startsWith("Expect ", true) }.forEach { t -> out += ContextLine("Waiting on ${t.title.removePrefix("Expect ")}${t.due?.let { " — " + fmt(it, today) } ?: ""}", listOf(t.id)) }
+        o.targetDate?.let { if (!it.isBefore(today)) out += ContextLine("Target date ${fmt(it, today)}", listOf(o.id)) }
         nb.filter { it.type == ObjType.EVENT && it.eventDate != null && !it.eventDate.isBefore(today) }.minByOrNull { it.eventDate!! }
-            ?.let { out += ContextLine("Upcoming milestone: ${it.title} ${fmt(it.eventDate!!, today)}.", listOf(it.id)) }
+            ?.let { out += ContextLine("Next milestone: ${it.title}, ${fmt(it.eventDate!!, today)}", listOf(it.id)) }
         val weekAgo = System.currentTimeMillis() - 7 * 86_400_000L
         nb.filter { it.created > weekAgo && it.type in setOf(ObjType.NOTE, ObjType.DOCUMENT, ObjType.IMAGE, ObjType.PERSON) && it.origin != Origin.EXAMPLE }
-            .sortedByDescending { it.created }.take(2).forEach { out += ContextLine("New this week: ${it.type.label.lowercase()} “${it.title}”.", listOf(it.id)) }
+            .sortedByDescending { it.created }.take(2).forEach { out += ContextLine("New this week: ${it.title}", listOf(it.id)) }
         val proposed = s.relationsOf(id).filter { it.review == Review.PROPOSED }
-        if (proposed.isNotEmpty()) out += ContextLine("${proposed.size} proposed ${if (proposed.size == 1) "connection" else "connections"} waiting for your review.", proposed.map { it.other(id) })
-        if (o.type == ObjType.PROJECT && o.projectStatus == ProjectStatus.ACTIVE && tasks.isEmpty()) out += ContextLine("Active, but no open task is connected — add a next step.", listOf(o.id))
+        if (proposed.isNotEmpty()) out += ContextLine("${proposed.size} proposed ${if (proposed.size == 1) "connection" else "connections"} to review", proposed.map { it.other(id) })
+        if (o.type == ObjType.PROJECT && o.projectStatus == ProjectStatus.ACTIVE && tasks.isEmpty()) out += ContextLine("Active, but no open task — add a next step", listOf(o.id))
         return out.distinctBy { it.text }.take(5)
     }
 
@@ -303,7 +304,8 @@ class Repository(context: Context, dbName: String? = "atlas.db") {
             days == 0L -> "today"; days == 1L -> "tomorrow"; days == -1L -> "yesterday"
             days in 2..6 -> "on " + d.dayOfWeek.getDisplayName(java.time.format.TextStyle.FULL, java.util.Locale.getDefault())
             days < 0 -> "${-days} days ago"
-            else -> d.format(java.time.format.DateTimeFormatter.ofPattern("MMM d"))
+            d.year == today.year -> d.format(java.time.format.DateTimeFormatter.ofPattern("MMM d"))
+            else -> d.format(java.time.format.DateTimeFormatter.ofPattern("MMM d, yyyy"))
         }
     }
 

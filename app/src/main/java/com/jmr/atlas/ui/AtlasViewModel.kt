@@ -22,7 +22,6 @@ sealed interface Route {
     data class Objects(val type: ObjType) : Route { override val key = "list:${type.name}" }
     data class Detail(val id: String) : Route { override val key = "obj:$id" }
     data object Timeline : Route { override val key = "timeline" }
-    data object Capture : Route { override val key = "capture" }
     data object Review : Route { override val key = "review" }
     data object Search : Route { override val key = "search" }
     data object Settings : Route { override val key = "settings" }
@@ -30,7 +29,7 @@ sealed interface Route {
 
     companion object {
         fun parse(s: String): Route? = when {
-            s == "universe" -> Universe; s == "timeline" -> Timeline; s == "capture" -> Capture; s == "review" -> Review
+            s == "universe" -> Universe; s == "timeline" -> Timeline; s == "review" -> Review
             s == "search" -> Search; s == "settings" -> Settings; s == "trash" -> Trash
             s.startsWith("list:") -> ObjType.entries.firstOrNull { it.name == s.removePrefix("list:") }?.let { Objects(it) }
             s.startsWith("obj:") -> Detail(s.removePrefix("obj:"))
@@ -49,6 +48,8 @@ sealed interface Overlay {
     data class Cluster(val focusId: String?, val kind: com.jmr.atlas.ui.universe.SlotKind) : Overlay
     data object FocusPicker : Overlay
     data class ConfirmPurge(val id: String) : Overlay
+    data object Capture : Overlay
+    data object RemoveExample : Overlay
 }
 
 class AtlasViewModel(app: Application, private val saved: SavedStateHandle) : AndroidViewModel(app) {
@@ -130,7 +131,7 @@ class AtlasViewModel(app: Application, private val saved: SavedStateHandle) : An
             busy.value = id
             val n = runCatching { repo.process(id).size }.getOrElse { repo.markFailed(id); -1 }
             busy.value = null
-            say(when (n) { -1 -> "Saved. Processing failed — the original is kept."; 0 -> "Saved. Nothing to connect."; else -> "Saved. $n suggestions ready for review." })
+            if (n < 0) say("Saved. Reading it failed — the original is kept.")
         }
     }
 
@@ -147,11 +148,10 @@ class AtlasViewModel(app: Application, private val saved: SavedStateHandle) : An
             if (docId != null) repo.setExtracted(docId, text)
             val n = withContext(Dispatchers.Default) { runCatching { repo.process(capId).size }.getOrElse { repo.markFailed(capId); -1 } }
             busy.value = null
-            say(when {
-                n < 0 -> "Saved “${r.name}”. Processing failed — the original is kept."
-                text.isBlank() -> "Saved “${r.name}”. No readable text found."
-                n == 0 -> "Saved “${r.name}”. Read ${text.length} characters, nothing to connect."
-                else -> "Saved “${r.name}”. $n suggestions ready for review."
+            if (overlay.value != Overlay.Capture) say(when {
+                n < 0 -> "Saved “${r.name}”. Reading it failed — the original is kept."
+                n == 0 -> "Saved “${r.name}”."
+                else -> "Saved “${r.name}”. ${n} to review."
             })
         }
     }

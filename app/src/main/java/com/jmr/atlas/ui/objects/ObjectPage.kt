@@ -33,7 +33,7 @@ import com.jmr.atlas.ui.theme.Atlas
 import java.time.LocalDate
 
 enum class Tab(val label: String) {
-    OVERVIEW("Overview"), CONNECTIONS("Connections"), FILES("Files"), TASKS("Tasks"), TIMELINE("Timeline"), ACTIVITY("Activity"),
+    OVERVIEW("Overview"), CONNECTIONS("Connections"), FILES("Documents"), TASKS("Tasks"), TIMELINE("Timeline"), ACTIVITY("Activity"),
     NOTES("Notes"), PROJECTS("Projects"), DOCUMENTS("Documents"), PREVIEW("Preview"), SUMMARY("Text"), ACTIONS("Actions"),
     RELATED("Related"), SOURCES("Sources"), CONTEXT("Context")
 }
@@ -47,13 +47,6 @@ fun pageTabs(t: ObjType): List<Tab> = when (t) {
     else -> listOf(Tab.OVERVIEW, Tab.CONNECTIONS, Tab.SOURCES, Tab.ACTIVITY)
 }
 
-fun sheetTabs(t: ObjType): List<Tab> = when (t) {
-    ObjType.PROJECT -> listOf(Tab.OVERVIEW, Tab.CONNECTIONS, Tab.FILES, Tab.TASKS)
-    ObjType.PERSON -> listOf(Tab.OVERVIEW, Tab.CONNECTIONS, Tab.PROJECTS, Tab.DOCUMENTS)
-    ObjType.DOCUMENT, ObjType.IMAGE -> listOf(Tab.PREVIEW, Tab.SUMMARY, Tab.CONNECTIONS)
-    else -> listOf(Tab.OVERVIEW, Tab.CONNECTIONS, Tab.ACTIVITY)
-}
-
 @Composable
 fun DetailScreen(vm: AtlasViewModel, snap: Snapshot, id: String) {
     val o = snap.objects[id]
@@ -64,7 +57,6 @@ fun DetailScreen(vm: AtlasViewModel, snap: Snapshot, id: String) {
         Row(Modifier.fillMaxWidth().padding(horizontal = 4.dp), verticalAlignment = Alignment.CenterVertically) {
             IconButton({ vm.back() }, Modifier.semantics { contentDescription = "Back" }) { Icon(Icons.AutoMirrored.Outlined.ArrowBack, null) }
             Spacer(Modifier.weight(1f))
-            IconButton({ vm.focusOn(o.id) }, Modifier.semantics { contentDescription = "Show on map" }) { Icon(Icons.Outlined.Hub, null) }
             IconButton({ vm.show(Overlay.Edit(o.id)) }, Modifier.semantics { contentDescription = "Edit" }) { Icon(Icons.Outlined.Edit, null) }
             ObjectMenu(vm, o)
         }
@@ -77,11 +69,16 @@ fun DetailScreen(vm: AtlasViewModel, snap: Snapshot, id: String) {
                 ObjAvatar(o, 64.dp); Spacer(Modifier.width(16.dp))
                 Column(Modifier.weight(1f)) {
                     Text(o.title, style = MaterialTheme.typography.headlineMedium, modifier = Modifier.semantics { heading() })
-                    Text(typeLine(o, snap), style = MaterialTheme.typography.bodyMedium, color = Atlas.SecondaryText)
+                    Text(typeLine(o, snap) + " · " + plural(snap.relationsOf(o.id).count { it.review == Review.CONFIRMED }, "connection"),
+                        style = MaterialTheme.typography.bodyMedium, color = Atlas.SecondaryText)
                 }
             }
-            Spacer(Modifier.height(12.dp)); HeaderChips(o, snap); Spacer(Modifier.height(16.dp))
-            ScrollTabs(tabs.map { it.label }, tab) { tab = it }
+            val proposed = snap.relationsOf(o.id).count { it.review == Review.PROPOSED }
+            if (proposed > 0) Pill("${plural(proposed, "connection")} to review", Icons.Outlined.Rule, Atlas.PrimaryContainer, Atlas.DeepPlum, Modifier.padding(top = 10.dp)) {
+                tab = tabs.indexOf(Tab.CONNECTIONS).coerceAtLeast(tabs.indexOf(Tab.RELATED)).coerceAtLeast(0)
+            }
+            Spacer(Modifier.height(16.dp))
+            WrapTabs(tabs.map { it.label }, tab) { tab = it }
             Spacer(Modifier.height(12.dp))
             TabBody(vm, snap, o, tabs[tab], compact = false)
             Spacer(Modifier.height(96.dp))
@@ -95,7 +92,7 @@ fun TabBody(vm: AtlasViewModel, snap: Snapshot, o: KObject, tab: Tab, compact: B
     fun of(vararg t: ObjType) = nb.filter { it.first.type in t }
     when (tab) {
         Tab.OVERVIEW -> Overview(vm, snap, o, compact)
-        Tab.CONTEXT -> ContextBlock(vm, snap, o, true)
+        Tab.CONTEXT -> { WhyNow(vm, snap, o, 6); NextSteps(vm, snap, o) }
         Tab.CONNECTIONS -> Connections(vm, snap, o, nb)
         Tab.FILES -> Related(vm, snap, o, of(ObjType.DOCUMENT, ObjType.IMAGE, ObjType.LINK, ObjType.NOTE), "No files or notes connected.", setOf(ObjType.DOCUMENT, ObjType.IMAGE, ObjType.LINK, ObjType.NOTE))
         Tab.TASKS -> {
@@ -111,8 +108,7 @@ fun TabBody(vm: AtlasViewModel, snap: Snapshot, o: KObject, tab: Tab, compact: B
         Tab.DOCUMENTS -> Related(vm, snap, o, of(ObjType.DOCUMENT, ObjType.IMAGE, ObjType.LINK), "No documents connected.", setOf(ObjType.DOCUMENT, ObjType.IMAGE, ObjType.LINK))
         Tab.PREVIEW -> Preview(o)
         Tab.SUMMARY -> {
-            Text("Text read on this phone", style = MaterialTheme.typography.titleSmall)
-            Text("Atlas doesn't summarize with AI in this version. This is the text recognized in the original, word for word.", style = MaterialTheme.typography.bodySmall, color = Atlas.SecondaryText)
+            Text("Recognized on this phone, word for word", style = MaterialTheme.typography.bodySmall, color = Atlas.SecondaryText)
             Spacer(Modifier.height(8.dp))
             SelectionContainer { Text(o.extracted.ifBlank { "No readable text was found." }, style = MaterialTheme.typography.bodyMedium.copy(fontFamily = FontFamily.Monospace), color = Atlas.DeepPlum) }
         }
@@ -123,7 +119,7 @@ fun TabBody(vm: AtlasViewModel, snap: Snapshot, o: KObject, tab: Tab, compact: B
 }
 
 @Composable
-private fun Overview(vm: AtlasViewModel, snap: Snapshot, o: KObject, compact: Boolean) {
+private fun Overview(vm: AtlasViewModel, snap: Snapshot, o: KObject, @Suppress("UNUSED_PARAMETER") compact: Boolean) {
     val ctx = LocalContext.current
     if (o.body.isNotBlank()) Text(o.body, style = MaterialTheme.typography.bodyLarge)
     else TextButton({ vm.show(Overlay.Edit(o.id)) }) { Text("Add a description") }
@@ -146,16 +142,8 @@ private fun Overview(vm: AtlasViewModel, snap: Snapshot, o: KObject, compact: Bo
         FilledTonalButton({ vm.repo.toggleDone(o.id) }) { Icon(if (o.done) Icons.Outlined.Undo else Icons.Outlined.Check, null, Modifier.size(18.dp)); Spacer(Modifier.width(6.dp)); Text(if (o.done) "Reopen" else "Complete") }
     }
     Spacer(Modifier.height(16.dp))
-    ContextBlock(vm, snap, o, showNextSteps = o.type != ObjType.TASK)
-    if (compact) {
-        val nb = snap.neighbours(o.id, false).map { it.first }
-        val ppl = nb.count { it.type == ObjType.PERSON }; val docs = nb.count { it.type in setOf(ObjType.DOCUMENT, ObjType.IMAGE, ObjType.LINK, ObjType.NOTE) }; val tasks = nb.count { it.type == ObjType.TASK && !it.done }
-        Row(Modifier.padding(top = 12.dp), verticalAlignment = Alignment.CenterVertically) {
-            Row(horizontalArrangement = Arrangement.spacedBy((-10).dp)) { nb.filter { it.type == ObjType.PERSON }.take(3).forEach { ObjAvatar(it, 30.dp, modifier = Modifier.border(2.dp, Atlas.Surface, androidx.compose.foundation.shape.CircleShape)) } }
-            Spacer(Modifier.width(10.dp))
-            Text("$ppl ${if (ppl == 1) "person" else "people"} · $docs ${if (docs == 1) "file" else "files"} · $tasks open ${if (tasks == 1) "task" else "tasks"}", style = MaterialTheme.typography.bodySmall, color = Atlas.SecondaryText)
-        }
-    }
+    WhyNow(vm, snap, o, 6)
+    NextSteps(vm, snap, o)
 }
 
 @Composable
@@ -163,7 +151,7 @@ private fun Connections(vm: AtlasViewModel, snap: Snapshot, o: KObject, nb: List
     Row { FilledTonalButton({ vm.show(Overlay.Connect(o.id)) }, Modifier.testTag("connect_btn")) { Icon(Icons.Outlined.AddLink, null, Modifier.size(18.dp)); Spacer(Modifier.width(6.dp)); Text("Connect") } }
     val proposed = nb.filter { it.second.review == Review.PROPOSED }
     if (proposed.isNotEmpty()) {
-        SectionLabel("Proposed — not yet facts")
+        SectionLabel("To review")
         proposed.forEach { (x, r) ->
             ObjRow(x, snap, sub = "${r.label(o.id)} · ${r.origin.label}", proposed = true, trailing = {
                 IconButton({ vm.repo.approve(r.id) }, Modifier.semantics { contentDescription = "Confirm connection to ${x.title}" }) { Icon(Icons.Outlined.Check, null, tint = Atlas.DeepTeal) }
@@ -196,11 +184,11 @@ private fun Preview(o: KObject) {
     val thumb = rememberThumb(o, 1400)
     when {
         thumb != null -> Image(thumb, o.title, Modifier.fillMaxWidth().clip(RoundedCornerShape(18.dp)), contentScale = ContentScale.FillWidth)
-        o.vaultFile.isBlank() -> Text(if (o.origin == Origin.EXAMPLE) "Example document — there is no file behind it." else "No original file is stored for this item.",
+        o.vaultFile.isBlank() -> Text(if (o.origin == Origin.EXAMPLE) "Example item — no file attached." else "No file is stored for this item.",
             style = MaterialTheme.typography.bodyMedium, color = Atlas.SecondaryText)
         else -> Card(Modifier.fillMaxWidth(), color = Atlas.PowderBlue) {
             Text(o.mime.substringAfter('/').uppercase() + " · " + size(o.sizeBytes), style = MaterialTheme.typography.titleSmall)
-            Text("Stored encrypted on this phone. Opening makes a temporary decrypted copy for the viewer app; it is deleted on next launch.", style = MaterialTheme.typography.bodySmall, color = Atlas.SecondaryText)
+            Text("Encrypted on this phone.", style = MaterialTheme.typography.bodySmall, color = Atlas.SecondaryText)
         }
     }
     if (o.vaultFile.isNotBlank()) Button({ platform.openFile(o) }, Modifier.padding(top = 12.dp)) { Icon(Icons.AutoMirrored.Outlined.OpenInNew, null, Modifier.size(18.dp)); Spacer(Modifier.width(6.dp)); Text("Open original") }
@@ -211,7 +199,7 @@ private fun Actions(vm: AtlasViewModel, snap: Snapshot, o: KObject) {
     val cap = snap.captures.firstOrNull { it.attachmentId == o.id || it.noteId == o.id }
     val pending = cap?.let { c -> snap.pending().filter { it.captureId == c.id } }.orEmpty()
     if (pending.isNotEmpty()) {
-        SectionLabel("Suggested from this item")
+        SectionLabel("Suggestions from this item")
         pending.forEach { s -> SuggestionCard(vm, snap, s) }
     }
     SectionLabel("Do something with it")

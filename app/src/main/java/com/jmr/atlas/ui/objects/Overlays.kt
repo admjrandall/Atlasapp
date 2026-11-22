@@ -36,12 +36,25 @@ fun Overlays(vm: AtlasViewModel, snap: Snapshot) {
         is Overlay.Connect -> snap.objects[o.id]?.let { ConnectDialog(vm, snap, it, o.types) } ?: vm.show(null)
         is Overlay.Cluster -> ClusterSheet(vm, snap, o)
         Overlay.FocusPicker -> FocusPicker(vm, snap)
+        Overlay.Capture -> CaptureSheet(vm, snap)
+        Overlay.RemoveExample -> AlertDialog({ vm.show(null) }, title = { Text("Remove the example workspace?") },
+            text = { Text("Deletes the ${snap.objects.values.count { it.origin == Origin.EXAMPLE }} example items. Anything you added stays.") },
+            confirmButton = { TextButton({ vm.repo.clearExample(); vm.focusOn(null); vm.show(null); vm.say("Example removed.") }) { Text("Remove") } },
+            dismissButton = { TextButton({ vm.show(null) }) { Text("Keep") } })
         is Overlay.ConfirmPurge -> snap.objects[o.id]?.let { obj ->
             AlertDialog({ vm.show(null) }, title = { Text("Delete “${obj.title}” forever?") },
                 text = { Text("Its connections and activity are removed${if (obj.vaultFile.isNotBlank()) ", and the encrypted original is erased" else ""}. This can't be undone.") },
                 confirmButton = { TextButton({ vm.repo.purge(obj.id); vm.show(null); vm.say("Deleted.") }) { Text("Delete forever", color = Atlas.Error) } },
                 dismissButton = { TextButton({ vm.show(null) }) { Text("Cancel") } })
         } ?: vm.show(null)
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun CaptureSheet(vm: AtlasViewModel, snap: Snapshot) {
+    ModalBottomSheet({ vm.show(null); vm.lastCapture.value = null }, containerColor = Atlas.Surface, sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)) {
+        com.jmr.atlas.ui.screens.CaptureContent(vm, snap)
     }
 }
 
@@ -179,10 +192,10 @@ fun ConnectDialog(vm: AtlasViewModel, snap: Snapshot, o: KObject, types: Set<Obj
 fun ClusterSheet(vm: AtlasViewModel, snap: Snapshot, c: Overlay.Cluster) {
     val focus = c.focusId?.let { snap.objects[it] }
     val slot = remember(snap, c) { slotsFor(snap, c.focusId).first { it.kind == c.kind } }
-    ModalBottomSheet({ vm.show(null) }, containerColor = Atlas.Surface, modifier = Modifier.testTag("cluster_sheet")) {
-        Column(Modifier.padding(horizontal = 20.dp).padding(bottom = 24.dp)) {
-            Text(slot.label(focus), style = MaterialTheme.typography.titleLarge)
-            Text(if (focus == null) "${slot.total} in your Atlas" else "${slot.total} connected to ${focus.title}", style = MaterialTheme.typography.bodySmall, color = Atlas.SecondaryText)
+    ModalBottomSheet({ vm.show(null) }, containerColor = Atlas.Surface) {
+        Column(Modifier.padding(horizontal = 20.dp).padding(bottom = 24.dp).testTag("cluster_sheet")) {
+            Text(if (slot.total == 0) slot.label(focus) else "${slot.label(focus)} · ${slot.total}", style = MaterialTheme.typography.titleLarge)
+            if (focus != null) Text(focus.title, style = MaterialTheme.typography.bodySmall, color = Atlas.SecondaryText)
             Row(Modifier.padding(vertical = 12.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 FilledTonalButton({ vm.show(Overlay.Create(c.kind.createType, c.focusId)) }) { Icon(Icons.Outlined.Add, null, Modifier.size(18.dp)); Spacer(Modifier.width(6.dp)); Text("New ${c.kind.createType.label.lowercase()}") }
                 if (focus != null) OutlinedButton({ vm.show(Overlay.Connect(focus.id, c.kind.types)) }) { Icon(Icons.Outlined.AddLink, null, Modifier.size(18.dp)); Spacer(Modifier.width(6.dp)); Text("Connect existing") }

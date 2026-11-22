@@ -23,6 +23,15 @@ fun Rule_.shot(name: String) {
     val img = onAllNodes(isRoot())[0].captureToImage().asAndroidBitmap()
     File("build/screenshots").apply { mkdirs() }.resolve("$name.png").outputStream().use { img.compress(Bitmap.CompressFormat.PNG, 100, it) }
 }
+/** Sheets and dialogs live in their own window; capture that node directly. */
+fun Rule_.shotNode(tag: String, name: String) {
+    waitForIdle(); mainClock.advanceTimeBy(800); waitForIdle()
+    runCatching {
+        val img = onNodeWithTag(tag).captureToImage().asAndroidBitmap()
+        File("build/screenshots").apply { mkdirs() }.resolve("$name.png").outputStream().use { img.compress(Bitmap.CompressFormat.PNG, 100, it) }
+    }
+}
+fun Rule_.focalIs(t: String) = onNodeWithTag("focal").assert(hasText(t, substring = true))
 fun Rule_.repo() = (activity.application as AtlasApp).repo
 fun Rule_.example() { onNodeWithTag("start_example").performClick(); waitForIdle() }
 fun Rule_.captureJamie() {
@@ -47,21 +56,23 @@ class PhoneUiTest {
         rule.onAllNodesWithText("Home Renovation").onFirst().assertExists()
         rule.shot("p02_universe_phone")
         // open a neighbourhood and refocus on a person
-        rule.onNodeWithTag("cluster_PEOPLE").performClick(); rule.waitForIdle()
+        rule.onNodeWithContentDescription("People, 4", substring = true).performClick(); rule.waitForIdle()
         rule.onNodeWithTag("cluster_sheet").assertIsDisplayed()
-        rule.shot("p03_cluster_people")
+        rule.shotNode("cluster_sheet", "p03_cluster_people")
         rule.onNodeWithText("Jamie Carter").performClick(); rule.waitForIdle(); rule.mainClock.advanceTimeBy(800)
-        rule.onNodeWithText("Focus: Jamie Carter").assertExists()
+        rule.focalIs("Jamie Carter")
         rule.shot("p04_focus_jamie")
         rule.onNodeWithContentDescription("Previous focus").performClick(); rule.waitForIdle(); rule.mainClock.advanceTimeBy(800)
-        rule.onNodeWithText("Focus: Home Renovation").assertExists()
-        // accessible list alternative
+        rule.focalIs("Home Renovation")
+        // accessible list alternative, from the labeled map menu
+        rule.onNodeWithTag("map_menu").performClick(); rule.waitForIdle()
         rule.onNodeWithTag("list_toggle").performClick(); rule.waitForIdle()
         rule.onNodeWithTag("universe_list").assertIsDisplayed()
         rule.shot("p05_universe_list")
+        rule.onNodeWithTag("map_menu").performClick(); rule.waitForIdle()
         rule.onNodeWithTag("list_toggle").performClick(); rule.waitForIdle()
         // insights
-        rule.onNodeWithTag("mode_toggle").performClick(); rule.waitForIdle()
+        rule.onNodeWithTag("mode_Insights").performClick(); rule.waitForIdle()
         rule.onNodeWithTag("insights").assertIsDisplayed()
         assertTrue(rule.onAllNodesWithTag("insight").fetchSemanticsNodes().isNotEmpty())
         rule.shot("p06_insights")
@@ -73,13 +84,14 @@ class PhoneUiTest {
         rule.onNodeWithTag("capture_fab").performClick(); rule.waitForIdle()
         rule.onNodeWithTag("capture").assertIsDisplayed()
         rule.captureJamie()
-        rule.shot("p07_capture_suggestions")
+        rule.shotNode("capture", "p07_capture_suggestions")
         val before = rule.repo().snap.ofType(ObjType.PERSON).size
         rule.onNodeWithTag("accept_all").performClick(); rule.waitForIdle()
         assertEquals(before + 1, rule.repo().snap.ofType(ObjType.PERSON).size)
         assertTrue(rule.repo().snap.ofType(ObjType.TASK).any { it.title == "Expect updated estimate from Jamie Lee" })
         assertTrue(rule.repo().snap.pending().isEmpty())
-        rule.shot("p08_capture_done")
+        rule.onNodeWithText("Saved and connected.").assertExists()
+        rule.shotNode("capture", "p08_capture_done")
     }
 
     @Test @Config(sdk = [36], qualifiers = "w411dp-h891dp-xxhdpi")
@@ -97,9 +109,13 @@ class PhoneUiTest {
         rule.shot("p11_drawer")
         rule.onNodeWithTag("nav_Tasks").performClick(); rule.waitForIdle()
         rule.onNodeWithTag("list_TASK").assertIsDisplayed()
-        rule.onNodeWithText("Order tile samples").assertExists()   // overdue → in "Today"
+        rule.onNodeWithText("Order tile samples").assertExists()
+        rule.onNodeWithTag("filter_Overdue").performClick(); rule.waitForIdle()
+        rule.onNodeWithText("Compare contractor quotes").assertDoesNotExist()
+        rule.onNodeWithTag("filter_Open").performClick(); rule.waitForIdle()
         rule.shot("p12_tasks")
-        rule.onNodeWithContentDescription("Settings").performClick(); rule.waitForIdle()
+        rule.onNodeWithTag("menu").performClick(); rule.waitForIdle()
+        rule.onNodeWithTag("nav_Settings").performClick(); rule.waitForIdle()
         rule.onNodeWithTag("settings").assertIsDisplayed()
         rule.shot("p13_settings")
     }
@@ -110,7 +126,7 @@ class PhoneUiTest {
         rule.onNodeWithContentDescription("Search").performClick(); rule.waitForIdle()
         rule.onNodeWithTag("search_field").performTextInput("load-bearing"); rule.waitForIdle()
         rule.onNodeWithText("Site visit notes").assertExists()
-        rule.onNodeWithText("Connected", substring = true).assertExists()
+        rule.onNodeWithText("Connected to those", substring = true).assertExists()
         rule.shot("p14_search")
     }
 
@@ -119,6 +135,14 @@ class PhoneUiTest {
         rule.example()
         rule.onNodeWithTag("universe").assertIsDisplayed()
         rule.shot("c01_cover_universe")
+    }
+
+    @Test @Config(sdk = [36], qualifiers = "w411dp-h891dp-xxhdpi")
+    fun insightsAndReviewEmptyStates() {
+        rule.example()
+        rule.onNodeWithTag("bell").performClick(); rule.waitForIdle()
+        rule.onNodeWithText("All caught up").assertExists()
+        rule.shot("p15_review_empty")
     }
 }
 
@@ -131,7 +155,7 @@ class WideUiTest {
     fun foldInnerLandscape() {
         rule.example()
         rule.onNodeWithTag("inspector").assertIsDisplayed()
-        rule.onNodeWithTag("ask_bar").assertIsDisplayed()
+        rule.onNodeWithTag("search_bar").assertIsDisplayed()
         rule.onNodeWithTag("nav_Universe").assertIsDisplayed()
         rule.shot("f01_fold_universe")
         rule.onNodeWithTag("tab_Sources").performClick(); rule.waitForIdle()
@@ -145,7 +169,7 @@ class WideUiTest {
         rule.shot("f04_fold_people_inspector")
         rule.onNodeWithTag("capture_fab").performClick(); rule.waitForIdle()
         rule.captureJamie()
-        rule.shot("f05_fold_capture")
+        rule.shotNode("capture", "f05_fold_capture")
     }
 
     @Test @Config(sdk = [36], qualifiers = "w707dp-h823dp-port-xhdpi")
@@ -166,8 +190,8 @@ class WideUiTest {
         rule.example()
         rule.onNodeWithTag("cluster_PEOPLE").assertExists()
         rule.onAllNodesWithText("Priya").onFirst().performClick(); rule.waitForIdle(); rule.mainClock.advanceTimeBy(800)
-        rule.onNodeWithText("Focus: Priya Shah").assertExists()
+        rule.focalIs("Priya Shah")
         rule.activityRule.scenario.recreate(); rule.waitForIdle()
-        rule.onNodeWithText("Focus: Priya Shah").assertExists()
+        rule.focalIs("Priya Shah")
     }
 }

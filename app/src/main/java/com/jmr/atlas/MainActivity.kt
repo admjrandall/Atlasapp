@@ -20,7 +20,6 @@ import com.google.mlkit.vision.documentscanner.GmsDocumentScanningResult
 import com.jmr.atlas.model.KObject
 import com.jmr.atlas.ui.AtlasRoot
 import com.jmr.atlas.ui.AtlasViewModel
-import com.jmr.atlas.ui.Route
 import com.jmr.atlas.ui.theme.AtlasTheme
 
 /** System actions the UI can trigger. Every one of them is real; nothing here is a placeholder. */
@@ -102,6 +101,6 @@ class MainActivity : ComponentActivity(), Platform {
             !text.isNullOrBlank() -> vm.captureText(text)
             else -> return
         }
-        vm.go(Route.Capture)
+        vm.show(com.jmr.atlas.ui.Overlay.Capture)
     }
 }
