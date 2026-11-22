@@ -1,0 +1,93 @@
+{
+  "theme": "Atlas light",
+  "version": "1.0",
+  "colors": {
+    "background": "#FBF7FC",
+    "surface": "#FFFFFF",
+    "surfaceSecondary": "#F4EDF8",
+    "primary": "#7443B1",
+    "primaryContainer": "#E7D8FC",
+    "orchid": "#C3A6F4",
+    "peach": "#FFDDD3",
+    "coral": "#C75D58",
+    "coolMint": "#D5EFEB",
+    "deepTeal": "#286D65",
+    "powderBlue": "#DCE8FA",
+    "deepPlum": "#352044",
+    "secondaryText": "#61566B",
+    "border": "#DDD4E5",
+    "error": "#B3263E"
+  },
+  "prohibitedColors": [
+    "yellow",
+    "lemon",
+    "lime",
+    "chartreuse",
+    "fluorescent yellow-green",
+    "mustard",
+    "gold",
+    "amber",
+    "yellow-green gradients"
+  ],
+  "allowWallpaperDynamicColors": false,
+  "colorRestrictionScope": "Designed UI only, not original imported media",
+  "typographySp": {
+    "display": [
+      34,
+      40
+    ],
+    "pageTitle": [
+      28,
+      32
+    ],
+    "sectionHeading": [
+      20,
+      24
+    ],
+    "cardHeading": [
+      16,
+      18
+    ],
+    "body": 16,
+    "secondary": [
+      13,
+      14
+    ],
+    "metadataMinimum": 12
+  },
+  "spacingDp": {
+    "base": 4,
+    "pagePadding": [
+      16,
+      24
+    ],
+    "cardSpacing": [
+      12,
+      16
+    ],
+    "smallRadius": 12,
+    "cardRadius": [
+      18,
+      22
+    ],
+    "expressiveRadius": [
+      24,
+      32
+    ],
+    "minimumTouchTarget": 48
+  },
+  "objectAccentTokens": {
+    "person": "primaryContainer",
+    "project": "primary",
+    "document": "powderBlue",
+    "task": "coolMint",
+    "idea": "peach",
+    "note": "orchid",
+    "link": "powderBlue",
+    "image": "peach",
+    "audio": "primaryContainer",
+    "collection": "primaryContainer",
+    "timeline": "deepTeal"
+  },
+  "notes": "Starting tokens; validate accessible contrast per use. Object accents may use darker accessible foregrounds. Never use color alone to encode meaning."
+}
