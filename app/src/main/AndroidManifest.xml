@@ -1,6 +1,9 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- No INTERNET permission: this build cannot send anything off the phone. -->
-<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+<!-- No INTERNET permission: this build cannot send anything off the phone.
+     ML Kit's libraries request INTERNET (for their own usage logging); it is stripped here, so those uploads fail closed.
+     ACCESS_NETWORK_STATE is kept only because the libraries' schedulers query connectivity; it cannot transmit anything. -->
+<manifest xmlns:android="http://schemas.android.com/apk/res/android" xmlns:tools="http://schemas.android.com/tools">
+    <uses-permission android:name="android.permission.INTERNET" tools:node="remove" />
     <application
         android:name=".AtlasApp"
         android:label="Atlas"

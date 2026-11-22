@@ -17,14 +17,14 @@ Capture ─▶ persist original (Note/Document + Capture row) ─▶ extract (on
 | `search` | Full-text + graph-neighbour retrieval. |
 | `insight` | Evidence-backed rule insights (every insight lists its sources). |
 | `ui.theme` / `ui.components` | Atlas light design system (tokens from `references/design-tokens.json`). |
-| `ui.shell` | Adaptive navigation: bottom bar (compact) or rail + workspace toolbar + inspector (medium/expanded). |
+| `ui` (Root) | Adaptive shell: compact → top bar + navigation drawer + map with persistent inspector sheet + capture button; ≥600dp → rail + toolbar (Map/Insights) + map; ≥760dp adds the side inspector and the search bar. |
 | `ui.universe` | Focal knowledge map, cluster previews, refocus history, zoom/pan/fit, list alternative. |
 | `ui.screens` | People, Projects, Documents, Ideas, Tasks, Collections, Timeline, Search, Review, Capture, Settings, Onboarding. |
 
 ## Decision records
 **ADR-1 Native Kotlin + Compose + Material 3.** Per spec. Compose BOM 2026.11.01, AGP 9.5.2 with built-in Kotlin, compileSdk 37.
 
-**ADR-2 Window-based adaptivity via Compose Material 3 Adaptive 1.3.0 (stable, Oct 2026).** `currentWindowAdaptiveInfo()` drives layout from actual window size class, never device model. Compact → bottom bar; medium/expanded → rail + panes. Panes are hand-composed (map + inspector, list + detail) so the map keeps full control of gestures.
+**ADR-2 Window-based adaptivity from measured width (revised in Phase 1).** Layout is chosen from the window's actual width (`BoxWithConstraints`), never the device model: <600dp compact, 600–759dp rail + map + inspector sheet (Fold 6 inner, portrait), ≥760dp rail + map + side inspector (inner landscape, tablets). The Material 3 Adaptive library was dropped: the Fold 6 inner screen is "medium" in both orientations, so size classes alone could not separate the two layouts. The map is laid out at a minimum design size and scaled to fit, so narrow panes never clip it. The phone has no bottom bar, matching the target design: destinations live in a drawer opened from the Atlas wordmark.
 
 **ADR-3 Plain SQLite (`SQLiteOpenHelper`), not Room, for now.** Room 3 requires KSP; adding a second code generator to AGP 9 built-in Kotlin is the riskiest build change. The schema uses real tables, foreign keys (`ON DELETE CASCADE`), unique constraints, indexes, FTS4 and versioned `onUpgrade` migrations, so moving to Room later is mechanical. Revisit in Phase 7.
 

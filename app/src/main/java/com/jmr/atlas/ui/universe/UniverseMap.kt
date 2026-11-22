@@ -69,61 +69,79 @@ fun UniverseMap(snap: Snapshot, focusId: String?, compact: Boolean, actions: Map
     val tf = rememberTransformableState { z, p, _ -> scale = (scale * z).coerceIn(0.6f, 2.5f); panX += p.x; panY += p.y }
     val focus = focusId?.let { snap.objects[it] }?.takeIf { !it.trashed }
 
-    Box(modifier.fillMaxSize().clipToBounds().testTag("universe")) {
-        if (listMode) UniverseList(snap, focus, actions, Modifier.fillMaxSize())
-        else Box(Modifier.fillMaxSize().transformable(tf).pointerInput(Unit) { detectTapGestures(onDoubleTap = { scale = 1f; panX = 0f; panY = 0f }) }) {
-            AnimatedContent(
-                targetState = focus?.id, label = "refocus",
-                transitionSpec = { (fadeIn(tween(280)) + scaleIn(tween(320), initialScale = 0.9f)) togetherWith (fadeOut(tween(160)) + scaleOut(tween(200), targetScale = 1.06f)) },
-            ) { fid ->
-                val f = fid?.let { snap.objects[it] }
-                val slots = remember(snap, fid) { slotsFor(snap, fid) }
-                Box(Modifier.fillMaxSize().graphicsLayer { scaleX = scale; scaleY = scale; translationX = panX; translationY = panY }) {
-                    if (compact) CompactMap(snap, f, slots, actions) else WideMap(snap, f, slots, actions)
-                }
-            }
-        }
-        // ---- controls
-        Row(Modifier.align(Alignment.TopStart).padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
+    val focusPill: @Composable () -> Unit = {
+        Row(verticalAlignment = Alignment.CenterVertically) {
             if (actions.back != null) {
                 FilledTonalIconButton(actions.back, colors = IconButtonDefaults.filledTonalIconButtonColors(containerColor = Atlas.Surface),
                     modifier = Modifier.semantics { contentDescription = "Previous focus" }) { Icon(Icons.AutoMirrored.Outlined.ArrowBack, null) }
                 Spacer(Modifier.width(8.dp))
             }
             Pill(if (focus == null) "My Universe" else "Focus: ${focus.title}", Icons.Outlined.CenterFocusStrong, Atlas.Surface, Atlas.DeepPlum,
-                Modifier.widthIn(max = 240.dp).testTag("focus_picker"), onClick = actions.pickFocus)
+                Modifier.widthIn(max = 260.dp).testTag("focus_picker"), onClick = actions.pickFocus)
         }
-        Column(Modifier.align(Alignment.TopEnd).padding(12.dp), horizontalAlignment = Alignment.End) {
-            FilledTonalIconButton({ listMode = !listMode }, colors = IconButtonDefaults.filledTonalIconButtonColors(containerColor = Atlas.Surface),
-                modifier = Modifier.testTag("list_toggle").semantics { contentDescription = if (listMode) "Show as map" else "Show as list" }) {
-                Icon(if (listMode) Icons.Outlined.Hub else Icons.AutoMirrored.Outlined.ViewList, null)
+    }
+    val listToggle: @Composable () -> Unit = {
+        FilledTonalIconButton({ listMode = !listMode }, colors = IconButtonDefaults.filledTonalIconButtonColors(containerColor = Atlas.Surface),
+            modifier = Modifier.testTag("list_toggle").semantics { contentDescription = if (listMode) "Show as map" else "Show as list" }) {
+            Icon(if (listMode) Icons.Outlined.Hub else Icons.AutoMirrored.Outlined.ViewList, null)
+        }
+    }
+    Column(modifier.fillMaxSize().testTag("universe")) {
+        // wide: controls sit in their own strip so they never cover a neighbourhood
+        if (!compact) Row(Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+            focusPill()
+            Spacer(Modifier.weight(1f))
+            if (!listMode) listOf(Triple(Icons.Outlined.Remove, "Zoom out") { scale = (scale / 1.2f).coerceAtLeast(0.6f) },
+                Triple(Icons.Outlined.Add, "Zoom in") { scale = (scale * 1.2f).coerceAtMost(2.5f) },
+                Triple(Icons.Outlined.FitScreen, "Fit to screen") { scale = 1f; panX = 0f; panY = 0f }).forEach { (ic, d, act) ->
+                IconButton(act, Modifier.semantics { contentDescription = d }) { Icon(ic, null, tint = Atlas.SecondaryText) }
             }
+            listToggle()
         }
-        if (!listMode && !compact) Column(Modifier.align(Alignment.BottomEnd).padding(12.dp)) {
-            listOf(Triple(Icons.Outlined.Add, "Zoom in") { scale = (scale * 1.2f).coerceAtMost(2.5f) },
-                Triple(Icons.Outlined.Remove, "Zoom out") { scale = (scale / 1.2f).coerceAtLeast(0.6f) },
-                Triple(Icons.Outlined.FitScreen, "Fit to screen") { scale = 1f; panX = 0f; panY = 0f }).forEach { (ic, d, a) ->
-                SmallFloatingActionButton(a, containerColor = Atlas.Surface, contentColor = Atlas.DeepPlum, elevation = FloatingActionButtonDefaults.elevation(1.dp),
-                    modifier = Modifier.padding(top = 6.dp).semantics { contentDescription = d }) { Icon(ic, null) }
+        Box(Modifier.weight(1f).fillMaxWidth().clipToBounds()) {
+            if (listMode) UniverseList(snap, focus, actions, Modifier.fillMaxSize(), topPad = if (compact) 72.dp else 8.dp)
+            else Box(Modifier.fillMaxSize().transformable(tf).pointerInput(Unit) { detectTapGestures(onDoubleTap = { scale = 1f; panX = 0f; panY = 0f }) }) {
+                AnimatedContent(
+                    targetState = focus?.id, label = "refocus",
+                    transitionSpec = { (fadeIn(tween(280)) + scaleIn(tween(320), initialScale = 0.9f)) togetherWith (fadeOut(tween(160)) + scaleOut(tween(200), targetScale = 1.06f)) },
+                ) { fid ->
+                    val f = fid?.let { snap.objects[it] }
+                    val slots = remember(snap, fid) { slotsFor(snap, fid) }
+                    Box(Modifier.fillMaxSize().graphicsLayer { scaleX = scale; scaleY = scale; translationX = panX; translationY = panY }) {
+                        if (compact) CompactMap(snap, f, slots, actions) else WideMap(snap, f, slots, actions)
+                    }
+                }
+            }
+            if (compact) {
+                Box(Modifier.align(Alignment.TopStart).padding(12.dp)) { focusPill() }
+                Box(Modifier.align(Alignment.TopEnd).padding(12.dp)) { listToggle() }
             }
         }
     }
 }
 
+/** Lays the map out at a minimum design size, then scales it down to fit — never clipped on narrow panes. */
+@Composable
+private fun Fitted(minW: Float, minH: Float, content: @Composable (W: Float, H: Float) -> Unit) = BoxWithConstraints(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+    val aw = maxWidth.value; val ah = maxHeight.value
+    val W = maxOf(aw, minW); val H = maxOf(ah, minH)
+    val s = min(aw / W, ah / H).coerceAtMost(1f)
+    Box(Modifier.requiredSize(W.dp, H.dp).graphicsLayer { scaleX = s; scaleY = s }) { content(W, H) }
+}
+
 // ============================================================ wide (Fold inner / tablet)
 private val WIDE = listOf(
-    SlotKind.PEOPLE to floatArrayOf(.04f, .03f, .44f, .28f),
-    SlotKind.DOCUMENTS to floatArrayOf(.55f, .05f, .41f, .24f),
-    SlotKind.TASKS to floatArrayOf(.02f, .365f, .31f, .25f),
-    SlotKind.IDEAS to floatArrayOf(.67f, .365f, .31f, .25f),
-    SlotKind.PROJECTS to floatArrayOf(.07f, .68f, .40f, .28f),
-    SlotKind.TIMELINE to floatArrayOf(.54f, .69f, .43f, .25f),
+    SlotKind.PEOPLE to floatArrayOf(.03f, .02f, .45f, .29f),
+    SlotKind.DOCUMENTS to floatArrayOf(.54f, .03f, .43f, .27f),
+    SlotKind.TASKS to floatArrayOf(.015f, .365f, .345f, .26f),
+    SlotKind.IDEAS to floatArrayOf(.64f, .365f, .345f, .26f),
+    SlotKind.PROJECTS to floatArrayOf(.05f, .68f, .42f, .30f),
+    SlotKind.TIMELINE to floatArrayOf(.53f, .69f, .44f, .27f),
 )
 
 @Composable
-private fun WideMap(snap: Snapshot, focus: KObject?, slots: List<Slot>, a: MapActions) = BoxWithConstraints(Modifier.fillMaxSize()) {
-    val W = maxOf(maxWidth.value, 470f); val H = maxOf(maxHeight.value, 600f)
-    val cx = W / 2; val cy = H / 2; val R = (min(W, H) * 0.135f).coerceIn(62f, 108f)
+private fun WideMap(snap: Snapshot, focus: KObject?, slots: List<Slot>, a: MapActions) = Fitted(500f, 560f) { W, H ->
+    val cx = W / 2; val cy = H / 2; val R = (min(W, H) * 0.125f).coerceIn(58f, 104f)
     val places = WIDE.map { (k, f) -> Place(k, f[0] * W, f[1] * H, f[2] * W, f[3] * H) }
     val byKind = slots.associateBy { it.kind }
     Box(Modifier.requiredSize(W.dp, H.dp)) {
@@ -142,7 +160,7 @@ private fun WideMap(snap: Snapshot, focus: KObject?, slots: List<Slot>, a: MapAc
 private fun Cluster(slot: Slot, focus: KObject?, w: Float, h: Float, snap: Snapshot, a: MapActions) {
     Column(Modifier.fillMaxSize().padding(horizontal = 10.dp, vertical = 6.dp), horizontalAlignment = Alignment.CenterHorizontally) {
         ClusterHeader(slot, focus) { a.openCluster(slot.kind) }
-        Spacer(Modifier.height(6.dp))
+        Spacer(Modifier.height(4.dp))
         val items = slot.items
         if (items.isEmpty()) {
             Text("None connected", style = MaterialTheme.typography.bodySmall, color = Atlas.SecondaryText)
@@ -153,31 +171,32 @@ private fun Cluster(slot: Slot, focus: KObject?, w: Float, h: Float, snap: Snaps
         Box(Modifier.weight(1f).fillMaxWidth(), contentAlignment = Alignment.Center) {
             shown = when (slot.kind) {
                 SlotKind.PEOPLE, SlotKind.PROJECTS -> {
-                    val n = ((w - 20) / 78).toInt().coerceIn(1, 4).coerceAtMost(items.size)
-                    Row(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.Top) {
-                        items.take(n).forEachIndexed { i, it -> Node(it, if (slot.kind == SlotKind.PEOPLE) 50.dp else 56.dp, Modifier.offset(y = if (n >= 3 && i == 1) 14.dp else 0.dp), a) }
+                    val n = ((w - 20) / 80).toInt().coerceIn(1, 4).coerceAtMost(items.size)
+                    Row(horizontalArrangement = Arrangement.spacedBy(4.dp), verticalAlignment = Alignment.Top) {
+                        items.take(n).forEach { Node(it, if (slot.kind == SlotKind.PEOPLE) 48.dp else 52.dp, Modifier, a) }
                     }; n
                 }
                 SlotKind.DOCUMENTS -> {
                     val n = ((w - 20) / 78).toInt().coerceIn(1, 4).coerceAtMost(items.size)
-                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) { items.take(n).forEach { FileTile(it, a) } }; n
+                    Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) { items.take(n).forEach { FileTile(it, a) } }; n
                 }
                 SlotKind.TASKS -> {
-                    val n = ((h - 64) / 40).toInt().coerceIn(1, 5).coerceAtMost(items.size)
-                    Column(Modifier.fillMaxWidth()) { items.take(n).forEach { TaskLine(it, a) } }; n
+                    val n = ((h - 72) / 40).toInt().coerceIn(1, 5).coerceAtMost(items.size)
+                    Column(Modifier.fillMaxWidth()) { items.take(n).forEach { TaskLine(it, a, showDue = w >= 200) } }; n
                 }
                 SlotKind.IDEAS -> {
-                    val n = (if (h > 150) 4 else 2).coerceAtMost(items.size)
+                    val cols = if (w >= 210) 2 else 1
+                    val n = (if (h > 150) 2 * cols else cols).coerceAtMost(items.size)
                     @OptIn(ExperimentalLayoutApi::class)
-                    FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp, Alignment.CenterHorizontally), verticalArrangement = Arrangement.spacedBy(6.dp), maxItemsInEachRow = 2) {
-                        items.take(n).forEach { IdeaCard(it, ((w - 34) / 2).dp, a) }
+                    FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp, Alignment.CenterHorizontally), verticalArrangement = Arrangement.spacedBy(6.dp), maxItemsInEachRow = cols) {
+                        items.take(n).forEach { IdeaCard(it, ((w - 20 - 6 * (cols - 1)) / cols).dp, a) }
                     }; n
                 }
-                SlotKind.TIMELINE -> { val win = timelineWindow(items); TimelineStrip(win, a); win.size }
+                SlotKind.TIMELINE -> { val win = timelineWindow(items, n = if (w < 230) 3 else 4); TimelineStrip(win, a); win.size }
             }
         }
         if (items.size > shown) Text("+${items.size - shown} more", style = MaterialTheme.typography.labelSmall, color = Atlas.Primary,
-            modifier = Modifier.align(Alignment.End).clip(CircleShape).clickable { a.openCluster(slot.kind) }.padding(horizontal = 8.dp, vertical = 4.dp))
+            modifier = Modifier.align(Alignment.End).offset(y = (-2).dp).clip(CircleShape).clickable { a.openCluster(slot.kind) }.padding(horizontal = 8.dp, vertical = 2.dp))
     }
 }
 
@@ -197,10 +216,10 @@ private fun ClusterHeader(slot: Slot, focus: KObject?, onClick: () -> Unit) {
 @Composable
 private fun Node(it: SlotItem, size: Dp, modifier: Modifier, a: MapActions) {
     val o = it.obj
-    Column(modifier.width(74.dp).clip(RoundedCornerShape(14.dp)).clickable(onClickLabel = "Focus") { a.focus(o.id) }.padding(vertical = 4.dp),
+    Column(modifier.width(76.dp).clip(RoundedCornerShape(14.dp)).clickable(onClickLabel = "Focus") { a.focus(o.id) }.padding(vertical = 2.dp),
         horizontalAlignment = Alignment.CenterHorizontally) {
         ObjAvatar(o, size, it.proposed, Modifier.border(2.dp, Atlas.Surface, CircleShape))
-        Spacer(Modifier.height(4.dp))
+        Spacer(Modifier.height(2.dp))
         Text(o.title.let { t -> if (o.type == ObjType.PERSON) t.substringBefore(' ') else t }, style = MaterialTheme.typography.labelMedium, maxLines = if (o.type == ObjType.PERSON) 1 else 2,
             overflow = TextOverflow.Ellipsis, textAlign = TextAlign.Center)
         val sub = if (o.type == ObjType.PERSON) o.role else o.projectStatus?.label.orEmpty()
@@ -215,24 +234,26 @@ private fun FileTile(it: SlotItem, a: MapActions) {
     val ext = when { o.mime == "application/pdf" -> "PDF"; o.mime.startsWith("image/") -> "IMG"; o.type == ObjType.NOTE -> "NOTE"; o.type == ObjType.LINK -> "LINK"; o.mime.startsWith("text/") -> "TXT"; else -> "FILE" }
     Column(Modifier.width(70.dp).clip(RoundedCornerShape(12.dp)).clickable { a.focus(o.id) }.padding(4.dp), horizontalAlignment = Alignment.CenterHorizontally) {
         Box {
-            ObjAvatar(o, 50.dp, it.proposed)
+            ObjAvatar(o, 46.dp, it.proposed)
             Text(ext, fontSize = 9.sp, fontWeight = FontWeight.Bold, color = Color.White,
                 modifier = Modifier.align(Alignment.BottomEnd).offset(4.dp, 4.dp).clip(RoundedCornerShape(5.dp)).background(if (ext == "PDF") Atlas.CoralText else Atlas.Primary).padding(horizontal = 4.dp, vertical = 1.dp))
         }
-        Spacer(Modifier.height(6.dp))
+        Spacer(Modifier.height(4.dp))
         Text(o.title, style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Medium), maxLines = 2, overflow = TextOverflow.Ellipsis, textAlign = TextAlign.Center)
     }
 }
 
 @Composable
-private fun TaskLine(it: SlotItem, a: MapActions) {
+private fun TaskLine(it: SlotItem, a: MapActions, showDue: Boolean) {
     val o = it.obj
     Row(Modifier.fillMaxWidth().height(40.dp).clip(RoundedCornerShape(10.dp)).clickable { a.focus(o.id) }, verticalAlignment = Alignment.CenterVertically) {
         Checkbox(o.done, { a.toggleTask(o.id) }, colors = CheckboxDefaults.colors(checkedColor = Atlas.DeepTeal, uncheckedColor = Atlas.SecondaryText),
             modifier = Modifier.size(40.dp).semantics { contentDescription = if (o.done) "Reopen ${o.title}" else "Complete ${o.title}" })
         Text(o.title, style = MaterialTheme.typography.bodyMedium, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f),
             color = if (o.done) Atlas.SecondaryText else Atlas.DeepPlum, textDecoration = if (o.done) androidx.compose.ui.text.style.TextDecoration.LineThrough else null)
-        if (!o.done && o.due != null) Text(relDate(o.due), style = MaterialTheme.typography.labelSmall, color = if (o.due < LocalDate.now()) Atlas.Error else Atlas.SecondaryText, maxLines = 1)
+        val overdue = !o.done && o.due != null && o.due < LocalDate.now()
+        if (showDue && !o.done && o.due != null) Text(relDate(o.due), style = MaterialTheme.typography.labelSmall, color = if (overdue) Atlas.Error else Atlas.SecondaryText, maxLines = 1)
+        else if (overdue) Icon(Icons.Outlined.ErrorOutline, "Overdue", tint = Atlas.Error, modifier = Modifier.size(16.dp))
         if (it.proposed) Icon(Icons.Outlined.HelpOutline, "Proposed", tint = Atlas.Primary, modifier = Modifier.size(16.dp))
     }
 }
@@ -274,8 +295,7 @@ private fun TimelineStrip(items: List<SlotItem>, a: MapActions) {
 private val COMPACT_ANGLES = mapOf(SlotKind.PEOPLE to -122.0, SlotKind.DOCUMENTS to -58.0, SlotKind.TASKS to 180.0, SlotKind.IDEAS to 0.0, SlotKind.TIMELINE to 122.0, SlotKind.PROJECTS to 58.0)
 
 @Composable
-private fun CompactMap(snap: Snapshot, focus: KObject?, slots: List<Slot>, a: MapActions) = BoxWithConstraints(Modifier.fillMaxSize()) {
-    val W = maxOf(maxWidth.value, 320f); val H = maxOf(maxHeight.value, 380f)
+private fun CompactMap(snap: Snapshot, focus: KObject?, slots: List<Slot>, a: MapActions) = Fitted(320f, 420f) { W, H ->
     val cx = W / 2; val cy = H * 0.5f; val R = min(W * 0.17f, H * 0.15f).coerceIn(50f, 80f)
     val tile = if (W < 360) 74f else 82f
     val rx = W / 2 - tile / 2 - 10; val ry = H / 2 - tile / 2 - 16
@@ -293,6 +313,7 @@ private fun CompactMap(snap: Snapshot, focus: KObject?, slots: List<Slot>, a: Ma
             val ax = p.x + p.w / 2; val ay = p.y + p.h / 2
             val mx = cx + (ax - cx) * 0.56f; val my = cy + (ay - cy) * 0.56f
             val len = hypot(ax - cx, ay - cy); val off = if (i % 2 == 0) 16f else -16f
+            if (len * 0.56f - 21f < R + 10f || len * 0.44f - 21f < tile / 2) return@forEachIndexed   // would collide with the focus or the tile
             val nx = mx + (-(ay - cy) / len) * off; val ny = my + ((ax - cx) / len) * off
             Box(Modifier.offset((nx - 21).dp, (ny - 21).dp).size(42.dp).clip(CircleShape).clickable(onClickLabel = "Focus ${first.obj.title}") { a.focus(first.obj.id) }) {
                 ObjAvatar(first.obj, 42.dp, first.proposed, Modifier.border(2.dp, Atlas.Surface, CircleShape))
@@ -303,10 +324,10 @@ private fun CompactMap(snap: Snapshot, focus: KObject?, slots: List<Slot>, a: Ma
             Surface(onClick = { a.openCluster(p.kind) }, shape = RoundedCornerShape(24.dp), color = s.kind.accent.container.copy(alpha = if (s.kind == SlotKind.PROJECTS) 1f else .92f),
                 border = BorderStroke(1.dp, Atlas.Surface), shadowElevation = 1.dp,
                 modifier = Modifier.offset(p.x.dp, p.y.dp).size(p.w.dp).testTag("cluster_${p.kind.name}").semantics { contentDescription = "${s.label(focus)}, ${s.total}" }) {
-                Column(Modifier.padding(6.dp), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Center) {
+                Column(Modifier.padding(4.dp), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Center) {
                     Icon(s.kind.icon, null, tint = if (s.kind == SlotKind.PROJECTS) Atlas.Primary else s.kind.accent.content, modifier = Modifier.size(24.dp))
                     Spacer(Modifier.height(4.dp))
-                    Text(s.label(focus).replace("Related ", "Related\n"), style = MaterialTheme.typography.labelMedium, textAlign = TextAlign.Center, maxLines = 2, lineHeight = 15.sp)
+                    Text(s.label(focus).replace("Related ", "Related\n"), style = if (tile < 80) MaterialTheme.typography.labelSmall else MaterialTheme.typography.labelMedium, softWrap = s.kind == SlotKind.PROJECTS, textAlign = TextAlign.Center, maxLines = 2, lineHeight = 15.sp)
                     if (s.kind != SlotKind.TIMELINE || s.total > 0) Text("${s.total}", style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Normal), color = Atlas.SecondaryText)
                 }
             }
@@ -417,9 +438,9 @@ private fun FocalNode(focus: KObject?, snap: Snapshot, R: Float, modifier: Modif
 
 // ============================================================ accessible list alternative
 @Composable
-fun UniverseList(snap: Snapshot, focus: KObject?, a: MapActions, modifier: Modifier = Modifier) {
+fun UniverseList(snap: Snapshot, focus: KObject?, a: MapActions, modifier: Modifier = Modifier, topPad: Dp = 72.dp) {
     val slots = remember(snap, focus?.id) { slotsFor(snap, focus?.id) }
-    LazyColumn(modifier.testTag("universe_list"), contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 72.dp, bottom = 120.dp)) {
+    LazyColumn(modifier.testTag("universe_list"), contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = topPad, bottom = 120.dp)) {
         item {
             Text(focus?.title ?: "My Universe", style = MaterialTheme.typography.headlineSmall, modifier = Modifier.semantics { heading() })
             Text(if (focus == null) "Everything in Atlas, by kind" else "Everything connected to ${focus.title}", style = MaterialTheme.typography.bodyMedium, color = Atlas.SecondaryText)

@@ -73,6 +73,12 @@ class DataTest {
         assertEquals(j, repo.search("contractor").exact.first().id)
     }
 
+    @Test fun appCannotUseTheNetwork() {
+        val ctx = ApplicationProvider.getApplicationContext<android.content.Context>()
+        val perms = ctx.packageManager.getPackageInfo(ctx.packageName, android.content.pm.PackageManager.GET_PERMISSIONS).requestedPermissions.orEmpty().toList()
+        assertFalse(perms.toString(), "android.permission.INTERNET" in perms)
+    }
+
     @Test fun exportContainsEverythingButFileBytes() {
         val j = repo.create(KObject(type = ObjType.PERSON, title = "Jamie"))
         val json = org.json.JSONObject(repo.exportJson())

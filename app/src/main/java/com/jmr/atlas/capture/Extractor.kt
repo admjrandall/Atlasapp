@@ -48,8 +48,13 @@ object Extractor {
         val mentionedExisting = linkedMapOf<String, KObject>()
         people.forEach { p ->
             val first = p.title.substringBefore(" ")
+            val last = p.title.substringAfter(" ", "")
+            // "Jamie" alone can mean Jamie Carter; "Jamie Lee" is someone else.
+            val firstOnly = Regex("\\b${Regex.escape(first)}\\b(?:\\s+([A-Z][a-z]+))?").findAll(text).any { m ->
+                val next = m.groupValues[1]; next.isEmpty() || next in NOT_NAMES || next.equals(last, true)
+            }
             val hit = Regex("\\b${Regex.escape(p.title)}\\b", RegexOption.IGNORE_CASE).containsMatchIn(text) ||
-                (first.length >= 3 && Regex("\\b${Regex.escape(first)}\\b").containsMatchIn(text) && people.count { it.title.substringBefore(" ").equals(first, true) } == 1)
+                (first.length >= 3 && firstOnly && people.count { it.title.substringBefore(" ").equals(first, true) } == 1)
             if (hit) mentionedExisting[p.id] = p
         }
         mentionedExisting.values.forEach { p ->
@@ -71,10 +76,15 @@ object Extractor {
             snap.neighbours(p.id, includeProposed = false).filter { it.first.type == ObjType.PROJECT && it.first.projectStatus != ProjectStatus.ARCHIVED }
                 .forEach { (pr, _) -> projHits.putIfAbsent(pr.id, "${p.title} is already connected to ${pr.title}") }
         }
-        val words = Regex("[A-Za-z]{4,}").findAll(text.lowercase()).map { it.value }.filter { it !in STOP }.toSet()
+        // Capitalized words (names) never count as topical overlap — "Jamie" says nothing about which project.
+        val nameWords = Regex("\\b[A-Z][a-z]+").findAll(text).map { it.value.lowercase() }.toSet() + people.flatMap { it.title.lowercase().split(" ") }
+        val words = Regex("[A-Za-z]{4,}").findAll(text.lowercase()).map { it.value }.filter { it !in STOP && it !in nameWords }.toList().distinct()
         projects.filter { it.id !in projHits }.forEach { pr ->
-            val vocab = (listOf(pr.title, pr.body) + snap.neighbours(pr.id, false).map { it.first.title }).joinToString(" ").lowercase()
-            words.firstOrNull { w -> Regex("\\b${w}s?\\b").containsMatchIn(vocab) }?.let { w -> projHits[pr.id] = "Mentions “$w”, which appears in ${pr.title}" }
+            val own = "${pr.title} ${pr.body}".lowercase()
+            val around = snap.neighbours(pr.id, false).filter { it.first.type != ObjType.PERSON }.joinToString(" ") { it.first.title }.lowercase()
+            val hitOwn = words.firstOrNull { w -> Regex("\\b${w}s?\\b").containsMatchIn(own) }
+            val hitAround = if (hitOwn == null) words.firstOrNull { w -> Regex("\\b${w}s?\\b").containsMatchIn(around) } else null
+            (hitOwn ?: hitAround)?.let { w -> projHits[pr.id] = "Mentions “$w”, which appears in ${pr.title}${if (hitOwn == null) "'s connected items" else ""}" }
         }
         projHits.entries.take(2).forEach { (id, why) ->
             out += Proposal("pr:$id", SuggestionKind.LINK_EXISTING, snap.objects[id]!!.title, why, ObjType.PROJECT, id, RelType.BELONGS_TO)

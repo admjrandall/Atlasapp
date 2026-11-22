@@ -93,6 +93,20 @@ fun Cover(o: KObject, snap: Snapshot, vm: AtlasViewModel, height: androidx.compo
     val a = accent(o.type)
     Box(Modifier.fillMaxWidth().height(height).clip(RoundedCornerShape(20.dp))
         .background(if (o.type == ObjType.PROJECT) Brush.linearGradient(listOf(Atlas.Primary, Atlas.DeepPlum)) else Brush.linearGradient(listOf(a.container, Atlas.SurfaceSecondary)))) {
+        if (thumb == null) Canvas(Modifier.fillMaxSize()) {
+            // a quiet constellation: the object's real connection count drawn as nodes around it
+            val n = snap.relationsOf(o.id).size.coerceIn(3, 18)
+            val c = androidx.compose.ui.geometry.Offset(size.width / 2, size.height / 2)
+            val rnd = java.util.Random(o.id.hashCode().toLong())
+            val line = if (o.type == ObjType.PROJECT) Color.White.copy(alpha = .22f) else a.content.copy(alpha = .18f)
+            val dot = if (o.type == ObjType.PROJECT) Atlas.Orchid else a.content.copy(alpha = .45f)
+            repeat(n) { i ->
+                val ang = (i * 2 * Math.PI / n) + rnd.nextDouble() * .4
+                val r = size.minDimension * (0.32f + rnd.nextFloat() * 0.5f)
+                val p = c + androidx.compose.ui.geometry.Offset((kotlin.math.cos(ang) * r * 1.6f).toFloat(), (kotlin.math.sin(ang) * r).toFloat())
+                drawLine(line, c, p, 1.5.dp.toPx()); drawCircle(dot, (3 + rnd.nextInt(4)).dp.toPx(), p)
+            }
+        }
         if (thumb != null) Image(thumb, null, Modifier.fillMaxSize(), contentScale = ContentScale.Crop)
         else Icon(icon(o.type), null, tint = if (o.type == ObjType.PROJECT) Color.White.copy(alpha = .85f) else a.content, modifier = Modifier.align(Alignment.Center).size(56.dp))
         Row(Modifier.align(Alignment.TopEnd).padding(8.dp)) {
