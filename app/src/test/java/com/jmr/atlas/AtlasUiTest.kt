@@ -179,4 +179,117 @@ class AtlasUiTest {
         rule.vm { it.projectSpace(rule.idOf("Home Renovation")) }
         rule.shot("a12_board_state_colors")
     }
+
+    // ---------------------------------------------------------------- 0.7.1
+
+    @Test @Config(sdk = [36], qualifiers = "w707dp-h823dp-port-xhdpi")
+    fun cardsOpenOnTapAndShowLinksOnLongPress() {
+        rule.example()
+        rule.vm { it.projectSpace(rule.idOf("Home Renovation")) }
+        rule.shot("b01_board_cards")
+        rule.onNodeWithContentDescription("Idea: Open shelving instead of upper cabinets").performClick(); rule.settle()
+        rule.onNodeWithTag("item_page").assertIsDisplayed()
+        rule.tap("go_home")
+        rule.onNodeWithTag("home").assertIsDisplayed()
+        rule.vm { it.projectSpace(rule.idOf("Home Renovation")) }
+        rule.onNodeWithContentDescription("Idea: Open shelving instead of upper cabinets").performTouchInput { longClick() }; rule.settle()
+        rule.onNodeWithTag("selection_bar").assertIsDisplayed()
+    }
+
+    @Test @Config(sdk = [36], qualifiers = "w369dp-h905dp-xxhdpi")
+    fun cardsOnTheCover() {
+        rule.example()
+        rule.vm { it.projectSpace(rule.idOf("Home Renovation")) }
+        rule.shot("b02_board_cards_cover")
+        rule.vm { it.go(Route.Space("files")) }
+        rule.shot("b03_files_cover")
+    }
+
+    @Test @Config(sdk = [36], qualifiers = "w707dp-h823dp-port-xhdpi")
+    fun tickingATaskOnItsCard() {
+        rule.example()
+        rule.vm { it.go(Route.Space("tasks")) }
+        val id = rule.idOf("Order tile samples")
+        rule.onAllNodesWithTag("tile_check", useUnmergedTree = true).onFirst().performClick(); rule.settle()
+        assertTrue(rule.repo().snap.objects.values.any { it.type == ObjType.TASK && it.done && it.title == "Order tile samples" } || rule.repo().snap.objects[id]!!.done)
+    }
+
+    @Test @Config(sdk = [36], qualifiers = "w707dp-h823dp-port-xhdpi")
+    fun tasksHaveAFilter() {
+        rule.example()
+        rule.vm { it.go(Route.Space("tasks")) }
+        rule.onNodeWithTag("filter").performTextInput("tile"); rule.settle()
+        rule.onNodeWithTag("kind_list").assertIsDisplayed()
+        rule.onNodeWithText("Order tile samples").assertExists()
+        rule.shot("b04_tasks_filter")
+    }
+
+    @Test fun fileKinds() {
+        assertEquals("PDF", com.jmr.atlas.ui.six.FileKind.of("application/pdf").label)
+        assertEquals("DOC", com.jmr.atlas.ui.six.FileKind.of("application/vnd.openxmlformats-officedocument.wordprocessingml.document").label)
+        assertEquals("XLS", com.jmr.atlas.ui.six.FileKind.of("", "budget.xlsx").label)
+        assertEquals("PPT", com.jmr.atlas.ui.six.FileKind.of("", "deck.pptx").label)
+        assertEquals("ZIP", com.jmr.atlas.ui.six.FileKind.of("application/zip").label)
+    }
+
+    @Test @Config(sdk = [36], qualifiers = "w707dp-h823dp-port-xhdpi")
+    fun aFilePageLeadsWithTheFile() {
+        rule.example()
+        rule.vm { it.projectSpace(rule.idOf("Home Renovation")) }
+        rule.vmOpen(rule.idOf("Floor plan v3"))
+        rule.onNodeWithTag("file_preview").assertExists()
+        rule.onNodeWithTag("file_name").assert(hasText("Floor plan v3"))
+        rule.onNodeWithTag("file_open").assertExists()
+        rule.onAllNodesWithText("Not found", substring = true).assertCountEquals(0)
+        rule.onNodeWithTag("go_home").assertExists()
+        rule.shot("b05_file_page")
+    }
+
+    @Test @Config(sdk = [36], qualifiers = "w369dp-h905dp-xxhdpi")
+    fun aFilePageCover() {
+        rule.example()
+        rule.vmOpen(rule.idOf("Contractor estimate"))
+        rule.shot("b06_file_page_cover")
+    }
+
+    @Test @Config(sdk = [36], qualifiers = "w707dp-h823dp-port-xhdpi")
+    fun swipeDownFoldsTheConversation() {
+        rule.example()
+        rule.type("Call the plumber tomorrow\n")
+        rule.onNodeWithTag("panel_header").performTouchInput { swipeDown(startY = centerY, endY = centerY + 600f, durationMillis = 300) }; rule.settle()
+        rule.onNodeWithTag("show_thread").assertIsDisplayed()
+        rule.shot("b07_thread_folded")
+        rule.tap("show_thread")
+        rule.onNodeWithTag("thread").assertExists()
+    }
+
+    @Test @Config(sdk = [36], qualifiers = "w707dp-h823dp-port-xhdpi")
+    fun longConversationKeepsTheInputOnScreen() {
+        rule.example()
+        rule.vm { vm -> vm.thread.value = (1..12).flatMap { i -> listOf(Turn.You(text = "Question number $i about something long enough to wrap"),
+            Turn.World(question = "q$i", text = "An answer that runs a couple of lines so the conversation is taller than the screen. ".repeat(2), thinking = false)) } +
+            Turn.You(text = "Here's the estimate", files = listOf("Carter estimate.pdf", "kitchen.jpg")) }
+        rule.tap("catch_open")
+        rule.onNodeWithTag("catch_input").assertIsDisplayed()
+        rule.onNodeWithText("Carter estimate.pdf").assertExists()
+        rule.onAllNodesWithText("1 attachment").assertCountEquals(0)
+        rule.shot("b08_long_thread")
+    }
+
+    @Test @Config(sdk = [36], qualifiers = "w707dp-h823dp-port-xhdpi")
+    fun searchOffersPhoneContacts() {
+        rule.example()
+        rule.type("Morgan")
+        rule.onNodeWithTag("find_results").assertExists()
+        // without the permission, a name search offers to include the phone's contacts
+        rule.onNodeWithTag("allow_contacts", useUnmergedTree = true).assertExists()
+        rule.shot("b09_find_contacts")
+    }
+
+    @Test @Config(sdk = [36], qualifiers = "w707dp-h823dp-port-xhdpi")
+    fun peopleCanComeFromContacts() {
+        rule.example()
+        rule.vm { it.go(Route.Space("people")) }
+        rule.onNodeWithTag("from_contacts").assertExists()
+    }
 }

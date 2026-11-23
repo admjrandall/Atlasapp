@@ -5,6 +5,8 @@ import android.net.Uri
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.draggable
+import androidx.compose.foundation.text.input.clearText
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
@@ -23,6 +25,10 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.draw.shadow
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.input.nestedscroll.nestedScroll
+import androidx.compose.ui.semantics.customActions
+import kotlinx.coroutines.launch
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.PathEffect
 import androidx.compose.ui.graphics.drawscope.Stroke
@@ -54,10 +60,37 @@ import java.time.LocalDate
  * line as (results for a name, the sentence for a task, or a note that a question is coming).
  */
 @Composable
-fun AtlasPanel(vm: AtlasViewModel, showClear: Boolean, maxHeight: Dp = 560.dp, content: @Composable ColumnScope.() -> Unit) {
+fun AtlasPanel(vm: AtlasViewModel, showClear: Boolean, maxHeight: Dp = 560.dp, onSwipeDown: (() -> Unit)? = null, content: @Composable ColumnScope.() -> Unit) {
     val working by vm.working.collectAsState()
-    Column(Modifier.fillMaxWidth().heightIn(max = maxHeight).shadow(14.dp, RoundedCornerShape(28.dp)).clip(RoundedCornerShape(28.dp)).background(Atlas.Background).testTag("atlas_panel")) {
-        Row(Modifier.fillMaxWidth().padding(start = 20.dp, end = 10.dp, top = 10.dp, bottom = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+    val drag = remember { androidx.compose.animation.core.Animatable(0f) }
+    val scope = rememberCoroutineScope()
+    val threshold = with(androidx.compose.ui.platform.LocalDensity.current) { 90.dp.toPx() }
+    fun release() { scope.launch { if (onSwipeDown != null && drag.value > threshold) { onSwipeDown(); drag.snapTo(0f) } else drag.animateTo(0f) } }
+    // pulling down past the top of the conversation (or on the header) folds it away
+    val pull = remember(onSwipeDown) {
+        object : androidx.compose.ui.input.nestedscroll.NestedScrollConnection {
+            override fun onPreScroll(available: androidx.compose.ui.geometry.Offset, source: androidx.compose.ui.input.nestedscroll.NestedScrollSource): androidx.compose.ui.geometry.Offset {
+                if (drag.value > 0f && available.y < 0f) { val use = maxOf(available.y, -drag.value); scope.launch { drag.snapTo(drag.value + use) }; return androidx.compose.ui.geometry.Offset(0f, use) }
+                return androidx.compose.ui.geometry.Offset.Zero
+            }
+            override fun onPostScroll(consumed: androidx.compose.ui.geometry.Offset, available: androidx.compose.ui.geometry.Offset, source: androidx.compose.ui.input.nestedscroll.NestedScrollSource): androidx.compose.ui.geometry.Offset {
+                if (onSwipeDown == null || available.y <= 0f || source != androidx.compose.ui.input.nestedscroll.NestedScrollSource.UserInput) return androidx.compose.ui.geometry.Offset.Zero
+                scope.launch { drag.snapTo(drag.value + available.y * 0.6f) }; return available
+            }
+            override suspend fun onPreFling(available: androidx.compose.ui.unit.Velocity): androidx.compose.ui.unit.Velocity {
+                if (drag.value > 0f) { release(); return available }
+                return androidx.compose.ui.unit.Velocity.Zero
+            }
+        }
+    }
+    Column(Modifier.fillMaxWidth().heightIn(max = maxHeight).graphicsLayer { translationY = drag.value; alpha = 1f - (drag.value / (threshold * 3)).coerceIn(0f, 0.5f) }
+        .shadow(14.dp, RoundedCornerShape(28.dp)).clip(RoundedCornerShape(28.dp)).background(Atlas.Background).nestedScroll(pull).testTag("atlas_panel")) {
+        if (onSwipeDown != null) Box(Modifier.fillMaxWidth().padding(top = 6.dp), contentAlignment = Alignment.Center) {
+            Box(Modifier.width(36.dp).height(4.dp).clip(RoundedCornerShape(2.dp)).background(Atlas.Border))
+        }
+        Row(Modifier.fillMaxWidth().then(if (onSwipeDown != null) Modifier.draggable(androidx.compose.foundation.gestures.rememberDraggableState { d -> scope.launch { drag.snapTo((drag.value + d).coerceAtLeast(0f)) } },
+                androidx.compose.foundation.gestures.Orientation.Vertical, onDragStopped = { release() }).semantics { customActions = listOf(androidx.compose.ui.semantics.CustomAccessibilityAction("Hide the conversation") { onSwipeDown(); true }) } else Modifier)
+            .padding(start = 20.dp, end = 10.dp, top = if (onSwipeDown != null) 2.dp else 10.dp, bottom = 8.dp).testTag("panel_header"), verticalAlignment = Alignment.CenterVertically) {
             Icon(Sparkle, null, Modifier.size(18.dp), tint = Atlas.Primary)
             Spacer(Modifier.width(8.dp))
             Text("Atlas", style = T.band.copy(fontSize = 17.sp), color = Atlas.DeepPlum)
@@ -89,17 +122,25 @@ fun ThreadView(vm: AtlasViewModel, s: Snapshot, turns: List<Turn>) {
                 is Turn.You -> YouBubble(t)
                 is Turn.Did -> DidCard(vm, s, t)
                 is Turn.Mine -> MineView(vm, s, t)
-                is Turn.World -> WorldView(vm, s, t)
+                is Turn.World -> WorldView(vm, s, t, latest = t.id == turns.lastOrNull { it is Turn.World }?.id)
             }
         }
     }
 }
 
+private fun guessMime(name: String) = android.webkit.MimeTypeMap.getSingleton().getMimeTypeFromExtension(name.substringAfterLast('.', "").lowercase()) ?: ""
+
 @Composable
 private fun YouBubble(t: Turn.You) = Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.CenterEnd) {
     Column(Modifier.widthIn(max = 520.dp).clip(RoundedCornerShape(20.dp, 20.dp, 6.dp, 20.dp)).background(Atlas.DeepPlum).padding(horizontal = 16.dp, vertical = 10.dp)) {
-        if (t.files > 0) Text(if (t.files == 1) "1 attachment" else "${t.files} attachments", style = T.meta.copy(fontSize = 12.sp), color = Color.White.copy(alpha = 0.7f))
-        if (t.text.isNotBlank()) Text(t.text, style = T.body.copy(fontSize = 16.sp, lineHeight = 22.sp), color = Color.White)
+        t.files.take(4).forEach { n ->
+            Row(Modifier.padding(vertical = 3.dp), verticalAlignment = Alignment.CenterVertically) {
+                FileBadge(FileKind.of(guessMime(n), n), 26.dp); Spacer(Modifier.width(10.dp))
+                Text(n, style = T.metaStrong.copy(fontSize = 14.sp), color = Color.White, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            }
+        }
+        if (t.files.size > 4) Text("+${t.files.size - 4} more", style = T.meta.copy(fontSize = 12.sp), color = Color.White.copy(alpha = 0.7f))
+        if (t.text.isNotBlank()) Text(t.text, style = T.body.copy(fontSize = 16.sp, lineHeight = 22.sp), color = Color.White, modifier = Modifier.padding(top = if (t.files.isEmpty()) 0.dp else 4.dp))
     }
 }
 
@@ -147,7 +188,7 @@ private fun MineView(vm: AtlasViewModel, s: Snapshot, a: Turn.Mine) = Column(Mod
 }
 
 @Composable
-private fun WorldView(vm: AtlasViewModel, s: Snapshot, t: Turn.World) = Column(Modifier.fillMaxWidth().testTag("world"), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+private fun WorldView(vm: AtlasViewModel, s: Snapshot, t: Turn.World, latest: Boolean = true) = Column(Modifier.fillMaxWidth().testTag("world"), verticalArrangement = Arrangement.spacedBy(10.dp)) {
     when {
         t.thinking -> Row(verticalAlignment = Alignment.CenterVertically) {
             CircularProgressIndicator(Modifier.size(16.dp), strokeWidth = 2.dp, color = Atlas.Primary); Spacer(Modifier.width(10.dp))
@@ -162,12 +203,12 @@ private fun WorldView(vm: AtlasViewModel, s: Snapshot, t: Turn.World) = Column(M
         }
         else -> {
             Text(t.text, style = T.body.copy(fontSize = 16.sp, lineHeight = 23.sp), color = Atlas.DeepPlum)
-            if (!t.saved) Row(Modifier.horizontalScroll(rememberScrollState()).testTag("save_offers"), horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+            if (!t.saved && latest) Row(Modifier.horizontalScroll(rememberScrollState()).testTag("save_offers"), horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
                 t.offers.mapNotNull { s.objects[it] }.filter { !it.trashed }.forEach { sp -> SpaceOffer("Save to ${sp.title}", sp) { vm.saveWorld(t.id, sp, null) } }
                 DashedPill("+ New space") { vm.setCatch("add to ") }
                 Pill("Keep as a note") { vm.saveWorld(t.id, null, null) }
             }
-            AtlasDid("Answered on this phone. It can be wrong and doesn’t know recent events.")
+            if (latest) AtlasDid("Answered on this phone · can be wrong · doesn’t know recent events")
         }
     }
 }
@@ -181,9 +222,29 @@ fun FindResults(vm: AtlasViewModel, s: Snapshot, text: String, hits: List<Search
     val groups = remember(hits) { hits.groupBy { Search.group(it.o.type) } }
     val order = listOf(Search.Group.PEOPLE, Search.Group.SPACES, Search.Group.TASKS, Search.Group.FILES, Search.Group.NOTES)
     val platform = LocalPlatform.current
+    // people on the phone who aren't in Atlas yet (integrations: contacts are read on demand, never copied wholesale)
+    var canRead by remember { mutableStateOf(vm.sync.contacts.canRead()) }
+    val phone by produceState(emptyList<com.jmr.atlas.integrations.Contacts.Hit>(), text, canRead) {
+        value = if (canRead && text.isNotBlank()) kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) { vm.sync.contacts.search(text.trim(), 6) } else emptyList()
+    }
+    val fresh = phone.filter { h -> s.ofType(ObjType.PERSON).none { it.contactKey == h.lookupKey || it.title.equals(h.name, true) } }
+    val nameLike = Search.words(text).size in 1..3 && text.none { it.isDigit() }
+    val contactsPart: @Composable () -> Unit = {
+        if (fresh.isNotEmpty()) Column(Modifier.testTag("phone_contacts"), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+            Text("ON YOUR PHONE", style = T.eyebrow, color = Atlas.SecondaryText, modifier = Modifier.padding(start = 4.dp))
+            fresh.forEach { h -> ContactRow(vm, h) }
+        } else if (!canRead && nameLike) Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(16.dp)).background(Atlas.Surface)
+            .clickable(role = Role.Button) { platform.request(listOf(android.Manifest.permission.READ_CONTACTS)) { canRead = it } }.padding(horizontal = 14.dp, vertical = 12.dp).testTag("allow_contacts"),
+            verticalAlignment = Alignment.CenterVertically) {
+            Icon(Icons.Outlined.Contacts, null, Modifier.size(20.dp), tint = Atlas.Primary); Spacer(Modifier.width(12.dp))
+            Text("Search your phone contacts too", style = T.metaStrong.copy(fontSize = 15.sp), color = Atlas.DeepPlum, modifier = Modifier.weight(1f))
+            Text("Allow", style = T.metaStrong.copy(fontSize = 14.sp), color = Atlas.Primary)
+        }
+    }
     Column(Modifier.fillMaxWidth().verticalScroll(rememberScrollState()).testTag("find_results"), verticalArrangement = Arrangement.spacedBy(14.dp)) {
         if (hits.isEmpty()) {
-            Text("Nothing in Atlas matches “${text.trim()}”.", style = T.body, color = Atlas.SecondaryText)
+            Text(if (fresh.isEmpty()) "Nothing in Atlas matches “${text.trim()}”." else "Not in Atlas yet — but on your phone:", style = T.body, color = Atlas.SecondaryText)
+            contactsPart()
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 Pill("Save as a task", dark = true) { vm.saveLine(text, com.jmr.atlas.capture.Sentence.Kind.TASK) }
                 Pill("Save as a note") { vm.saveLine(text, com.jmr.atlas.capture.Sentence.Kind.NOTE) }
@@ -213,6 +274,7 @@ fun FindResults(vm: AtlasViewModel, s: Snapshot, text: String, hits: List<Search
                 }
             }
         }
+        contactsPart()
         DashedPill("Not what you meant? Save “${text.trim().take(40)}” as a note") { vm.saveLine(text, com.jmr.atlas.capture.Sentence.Kind.NOTE) }
     }
 }
@@ -297,6 +359,12 @@ fun QuestionHint(vm: AtlasViewModel, mine: Boolean, inChat: Boolean) {
 fun TypeMark(s: Snapshot, o: KObject, size: Dp) = when (o.type) {
     ObjType.PERSON -> Face(o, size)
     ObjType.PROJECT, ObjType.COLLECTION -> SpaceMark(s, o, size)
+    ObjType.DOCUMENT, ObjType.LINK -> Box(Modifier.size(size), contentAlignment = Alignment.Center) { FileBadge(o, size * 0.92f) }
+    ObjType.IMAGE -> {
+        val th = com.jmr.atlas.ui.components.rememberThumb(o, 160)
+        if (th != null) androidx.compose.foundation.Image(th, null, Modifier.size(size).clip(RoundedCornerShape(size * 0.24f)), contentScale = androidx.compose.ui.layout.ContentScale.Crop)
+        else Box(Modifier.size(size), contentAlignment = Alignment.Center) { FileBadge(o, size * 0.92f) }
+    }
     else -> Box(Modifier.size(size).clip(RoundedCornerShape(size * 0.3f)).background(Atlas.Chip), contentAlignment = Alignment.Center) {
         Icon(com.jmr.atlas.ui.theme.icon(o.type), null, Modifier.size(size * 0.52f), tint = Atlas.DeepPlum)
     }
@@ -377,3 +445,25 @@ fun SendButton(label: String, onClick: () -> Unit) =
         Spacer(Modifier.width(6.dp))
         Icon(Icons.Outlined.ArrowUpward, null, Modifier.size(16.dp), tint = Color.White)
     }
+
+
+@Composable
+private fun ContactRow(vm: AtlasViewModel, h: com.jmr.atlas.integrations.Contacts.Hit) {
+    val scope = rememberCoroutineScope()
+    Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(16.dp)).background(Atlas.Surface).clickable(role = Role.Button, onClickLabel = "Add ${h.name} to Atlas and open") {
+        scope.launch {
+            val id = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) { vm.sync.addContact(h.lookupKey) }
+            if (id != null) { vm.closeCatch(); vm.catchField.clearText(); vm.open(id); vm.say("${h.name} added from your contacts.") } else vm.say("Couldn't read that contact.")
+        }
+    }.padding(horizontal = 12.dp, vertical = 10.dp).testTag("contact_row"), verticalAlignment = Alignment.CenterVertically) {
+        Box(Modifier.size(40.dp).clip(CircleShape).background(Atlas.PrimaryContainer), contentAlignment = Alignment.Center) {
+            Text(h.name.split(" ").filter { it.isNotBlank() }.take(2).joinToString("") { it.take(1).uppercase() }, style = T.metaStrong, color = Atlas.Primary)
+        }
+        Spacer(Modifier.width(12.dp))
+        Column(Modifier.weight(1f)) {
+            Text(h.name, style = T.tileTitle.copy(fontSize = 15.sp), color = Atlas.DeepPlum, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            Text(h.sub.ifBlank { "Phone contact" }, style = T.meta.copy(fontSize = 12.sp), color = Atlas.SecondaryText, maxLines = 1, overflow = TextOverflow.Ellipsis)
+        }
+        Text("Add", style = T.metaStrong.copy(fontSize = 14.sp), color = Atlas.Primary, modifier = Modifier.padding(horizontal = 8.dp))
+    }
+}

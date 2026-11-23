@@ -2,6 +2,23 @@
 
 Honest status. "Verified" = automated test or inspected screenshot (Robolectric). Nothing has run on a physical Fold 6 yet; items marked **device-only** can only be proven there.
 
+## 0.7.1 — files, cards that look like what they are, the box on the Fold
+
+| Reported | Cause / decision | Fix | Test |
+|---|---|---|---|
+| Can't see what I type with the keyboard up | The panel kept its full height, so on the inner screen it pushed the input row under the keyboard | Input row is laid out first and never shrinks; the panel gets only the room left above the keyboard and scrolls; clears the status bar | `longConversationKeepsTheInputOnScreen` (layout; keyboard itself **device-only**) |
+| Want to swipe the conversation down | — | Drag the panel's handle/header down, or pull down at the top of the thread: it folds to a "Conversation · N" pill; tap to bring it back | `swipeDownFoldsTheConversation` |
+| "1 attachment / 1 attachment" | The fallback text and the file count were both shown | Your bubble lists the files with their format badges | `longConversationKeepsTheInputOnScreen` |
+| "How old is Lincoln" → "no access to personal information" | Chat prompt said "private assistant… the person", which Gemma read as a privacy question | Prompt says it answers general knowledge incl. public figures, reads names charitably; turns labelled User/Atlas. Save offers and the caveat show only on the latest answer | — (**device-only**) |
+| Cards all look the same / boxy | — | Person: face + name on a pill. File: format badge (red PDF, blue DOC, green XLS, orange PPT…) + name + size. Photo: the photo. Task: tick box you can tap. Idea: bulb on warm paper with a bubble corner. Event: calendar leaf. State colors unchanged | `cardsOpenOnTapAndShowLinksOnLongPress`, `cardsOnTheCover`, `tickingATaskOnItsCard` |
+| Tapping an item in a group doesn't open it | Tap selected it (links mode) | Tap opens: files open in the phone's viewer, links in the browser, everything else on its page. Long-press shows its links (as tap did before); while links show, taps move the selection | `cardsOpenOnTapAndShowLinksOnLongPress`, `boardTapOpen` |
+| Files: PDF icon, open on tap, ⋮ for details | — | `FileKind` from MIME/extension; ⋮ on file, photo and link cards opens the details page. Open goes straight to the default viewer (no chooser) with the right extension | `fileKinds` |
+| File page | Image shown twice, giant file name, empty "Not found" rows, actions that didn't apply | Leads with the file: photo / PDF first page / big badge (tap opens), name + format · pages · size · added, Open · Share (the actual file) · Rename · File in…, then where it's filed, what Atlas read (only if found), text (if any), your note | `aFilePageLeadsWithTheFile`, `aFilePageCover` |
+| Files space should feel like a file manager | — | Files opens as a list by default: Recent badges, then This week / This month / Earlier | `cardsOnTheCover` |
+| Tasks has no filter | — | Filter on every kind space; on Tasks it lists matches and keeps the time bands otherwise | `tasksHaveAFilter` |
+| Find people in phone contacts | Contacts were only reachable from a sheet | Search shows "On your phone" (contacts not yet in Atlas; tap adds and opens). Without permission, a name search offers "Search your phone contacts too · Allow". People has "From contacts" | `searchOffersPhoneContacts`, `peopleCanComeFromContacts` |
+| No way home from an item | — | Home button next to Back on item, file, space and All spaces pages once you're two levels in | `cardsOpenOnTapAndShowLinksOnLongPress` |
+
 ## 0.7.0 — the Atlas box, search, Now, spaces, color = state
 
 | Asked | Done | Test |

@@ -100,7 +100,8 @@ class CoverUiTest {
         rule.onNodeWithTag("space").assertIsDisplayed()
         assertTrue(rule.onAllNodesWithTag("band", useUnmergedTree = true).fetchSemanticsNodes().size >= 4)
         rule.shot("c04_board")
-        rule.onNodeWithContentDescription("Idea: Open shelving instead of upper cabinets").performClick(); rule.settle()
+        // 0.7.1: long-press shows links; tap opens
+        rule.onNodeWithContentDescription("Idea: Open shelving instead of upper cabinets").performTouchInput { longClick() }; rule.settle()
         rule.onNodeWithTag("selection_bar").assertIsDisplayed()
         rule.shot("c05_board_tap")
         rule.tap("open_selected")
@@ -132,7 +133,7 @@ class FoldUiTest {
         rule.onAllNodesWithTag("cover").onFirst().performClick(); rule.settle()
         rule.onNodeWithTag("ribbon").assertExists()
         rule.shot("f02_board")
-        rule.onNodeWithContentDescription("Idea: Open shelving instead of upper cabinets").performClick(); rule.settle()
+        rule.onNodeWithContentDescription("Idea: Open shelving instead of upper cabinets").performTouchInput { longClick() }; rule.settle()
         rule.onNodeWithTag("selection_bar").assertIsDisplayed()
         rule.shot("f03_board_tap")
         rule.vm { it.select(rule.idOf("Priya Shah")) }

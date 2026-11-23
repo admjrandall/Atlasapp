@@ -25,6 +25,8 @@ object Atlas {
     val DoneBg = Color(0xFFDDF2EE); val DoneInk = Color(0xFF1F5C52)
     // 0.7 — bands are neutral paper; only the Tasks "Late" band is faintly coral.
     val BandNeutral = Color(0xFFF3EFF5); val BandLate = Color(0xFFFFF0EC)
+    // ideas sit on warm paper with a bulb — a type cue that isn't a state color
+    val IdeaPaper = Color(0xFFFFFBEF); val IdeaInk = Color(0xFF7A5A00)
     val Background = Color(0xFFFBF7FC)
     val Surface = Color(0xFFFFFFFF)
     val SurfaceSecondary = Color(0xFFF4EDF8)

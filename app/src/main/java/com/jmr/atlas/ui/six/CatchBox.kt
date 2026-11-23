@@ -23,6 +23,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.KeyboardArrowRight
 import androidx.compose.material.icons.outlined.*
+import com.jmr.atlas.ui.Turn
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.*
@@ -97,6 +98,7 @@ fun CatchSheet(vm: AtlasViewModel, snap: Snapshot) {
     val extra by vm.extraLinks.collectAsState()
     val attach by vm.attachOpen.collectAsState()
     val thread by vm.thread.collectAsState()
+    val hidden by vm.threadHidden.collectAsState()
     val files by vm.attachments.collectAsState()
     val newLinks by vm.newLinks.collectAsState()
     val parsed = remember(text, snap, ctxId) { if (text.isBlank()) null else vm.parsed(text) }
@@ -121,10 +123,13 @@ fun CatchSheet(vm: AtlasViewModel, snap: Snapshot) {
                 else -> vm.closeCatch()
             }
         })
-        Column(Modifier.align(Alignment.BottomCenter).fillMaxWidth().imePadding().padding(horizontal = pad).padding(bottom = 14.dp).widthIn(max = 760.dp)
+        // The input row is laid out last and never shrinks; everything above it gets only the room that's left over the
+        // keyboard (0.7.1: on the Fold the panel used to push the input under the keyboard).
+        Column(Modifier.align(Alignment.BottomCenter).fillMaxWidth().statusBarsPadding().imePadding().padding(horizontal = pad).padding(top = 8.dp, bottom = 14.dp).widthIn(max = 760.dp)
             // a tap between the cards belongs to the sheet, not to the backdrop behind it
             .pointerInput(Unit) { detectTapGestures { } }, verticalArrangement = Arrangement.spacedBy(12.dp)) {
             val ctx = ctxId?.let { snap.objects[it] }
+            Box(Modifier.weight(1f, fill = false)) {
             when {
                 picking -> LinkPicker(vm, snap, exclude = setOfNotNull(ctxId) + extra) { picking = false }
                 parsed == null && files.isNotEmpty() ->
@@ -135,7 +140,15 @@ fun CatchSheet(vm: AtlasViewModel, snap: Snapshot) {
                         Row(verticalAlignment = Alignment.CenterVertically) { LinkButton { picking = true }; Spacer(Modifier.weight(1f)); SendPill(if (files.size == 1) "Save it" else "Save ${files.size}") { vm.send() } }
                     }
                 parsed == null && attach -> {}
-                parsed == null && thread.isNotEmpty() -> AtlasPanel(vm, showClear = true) { ThreadView(vm, snap, thread) }
+                parsed == null && thread.isNotEmpty() && !hidden -> AtlasPanel(vm, showClear = true, onSwipeDown = { vm.threadHidden.value = true }) { ThreadView(vm, snap, thread) }
+                parsed == null && thread.isNotEmpty() -> Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.BottomCenter) {
+                    Row(Modifier.heightIn(min = 44.dp).shadow(6.dp, RoundedCornerShape(22.dp)).clip(RoundedCornerShape(22.dp)).background(Atlas.Background)
+                        .clickable(role = Role.Button, onClickLabel = "Show the conversation") { vm.threadHidden.value = false }.padding(horizontal = 16.dp).testTag("show_thread"), verticalAlignment = Alignment.CenterVertically) {
+                        Icon(Sparkle, null, Modifier.size(16.dp), tint = Atlas.Primary); Spacer(Modifier.width(8.dp))
+                        Text("Conversation · ${thread.count { it is Turn.You }}", style = T.metaStrong.copy(fontSize = 14.sp), color = Atlas.DeepPlum)
+                        Spacer(Modifier.width(6.dp)); Icon(Icons.Outlined.ExpandLess, null, Modifier.size(18.dp), tint = Atlas.SecondaryText)
+                    }
+                }
                 parsed == null -> Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
                     if (ctx != null) Bubble("Adding to ${ctx.title}")
                     Examples(vm, ctx)
@@ -148,6 +161,7 @@ fun CatchSheet(vm: AtlasViewModel, snap: Snapshot) {
                     if (files.isEmpty()) AlsoInAtlas(vm, snap, hits.filter { h -> h.inTitle && h.o.id != ctxId && parsed.people.none { it.id == h.o.id } && parsed.space?.id != h.o.id })
                     Preview(vm, snap, parsed, vm.kindOf(parsed), ctx, extra, newLinks, dropped, dueOff, files.size, onSend = { vm.send() }) { picking = true }
                 }
+            }
             }
             AnimatedVisibility(attach, enter = fadeIn(), exit = fadeOut()) {
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {

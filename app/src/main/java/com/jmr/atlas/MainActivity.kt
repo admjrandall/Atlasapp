@@ -38,6 +38,8 @@ interface Platform {
     fun scan()
     fun export(json: String)
     fun openFile(o: KObject)
+    /** Shares the original file (a decrypted copy that's cleared on next start), not just its text. */
+    fun shareFile(o: KObject)
     /** System speech recognizer, asked to prefer on-device recognition. Atlas itself never handles audio. */
     fun dictate(onText: (String) -> Unit)
     fun pickPhoto(onUri: (Uri) -> Unit)
@@ -103,11 +105,21 @@ class MainActivity : ComponentActivity(), Platform {
             .addOnFailureListener { vm.say("The document scanner isn't available on this phone.") }
     }
     override fun export(json: String) { pendingExport = json; exporter.launch("atlas-export-${java.time.LocalDate.now()}.json") }
+    private fun openCopyUri(o: KObject): Uri? {
+        val ext = com.jmr.atlas.ui.six.FileKind.ext(o.mime, o.title).ifBlank { "bin" }
+        val f = vm.repo.files.openCopy(o.vaultFile, ext) ?: run { vm.say("The original file isn't available."); return null }
+        return FileProvider.getUriForFile(this, "$packageName.files", f)
+    }
     override fun openFile(o: KObject) {
-        val ext = when { o.mime == "application/pdf" -> "pdf"; o.mime.startsWith("image/") -> o.mime.substringAfter('/').substringBefore('+'); o.mime == "text/plain" -> "txt"; else -> "bin" }
-        val f = vm.repo.files.openCopy(o.vaultFile, ext) ?: run { vm.say("The original file isn't available."); return }
-        val uri = FileProvider.getUriForFile(this, "$packageName.files", f)
-        launch(Intent.createChooser(Intent(Intent.ACTION_VIEW).setDataAndType(uri, o.mime).addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION), o.title), "No app on this phone can open ${o.mime}.")
+        val uri = openCopyUri(o) ?: return
+        val mime = o.mime.ifBlank { android.webkit.MimeTypeMap.getSingleton().getMimeTypeFromExtension(com.jmr.atlas.ui.six.FileKind.ext(o.mime, o.title)) ?: "*/*" }
+        // straight to the phone's viewer for this type (Samsung's PDF viewer, Gallery…); the chooser only if none is default
+        launch(Intent(Intent.ACTION_VIEW).setDataAndType(uri, mime).addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION), "No app on this phone can open ${com.jmr.atlas.ui.six.FileKind.of(o).label} files.")
+    }
+    override fun shareFile(o: KObject) {
+        val uri = openCopyUri(o) ?: return
+        launch(Intent.createChooser(Intent(Intent.ACTION_SEND).setType(o.mime.ifBlank { "*/*" }).putExtra(Intent.EXTRA_STREAM, uri).putExtra(Intent.EXTRA_SUBJECT, o.title)
+            .addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION), o.title))
     }
     override fun request(perms: List<String>, onResult: (Boolean) -> Unit) {
         val need = perms.filter { checkSelfPermission(it) != android.content.pm.PackageManager.PERMISSION_GRANTED }

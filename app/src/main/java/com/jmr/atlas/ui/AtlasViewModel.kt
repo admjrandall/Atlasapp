@@ -78,7 +78,7 @@ sealed interface Overlay {
 /** One line in the Atlas conversation (design 0.7). The thread is short-lived: Clear empties it; what Atlas did lives in your spaces. */
 sealed interface Turn {
     val id: String
-    data class You(override val id: String = newId(), val text: String, val files: Int = 0) : Turn
+    data class You(override val id: String = newId(), val text: String, val files: List<String> = emptyList()) : Turn
     /** Atlas changed something in Atlas. Undo stays on the card while it's in the thread. */
     data class Did(override val id: String = newId(), val text: String, val ids: List<String>, val undo: (() -> Unit)?, val undone: Boolean = false) : Turn
     /** An answer about your own things: Atlas's own sentence at once, maybe refined by the model. */
@@ -304,11 +304,13 @@ class AtlasViewModel(app: Application, private val saved: SavedStateHandle) : An
     /** Open a search result from the box. */
     fun openHit(id: String) { closeCatch(); reveal(id) }
 
-    fun clearThread() { askJob?.cancel(); working.value = null; thread.value = emptyList() }
-    private fun push(vararg t: Turn) { thread.value = thread.value + t }
+    fun clearThread() { askJob?.cancel(); working.value = null; thread.value = emptyList(); threadHidden.value = false }
+    /** Swiped down: the conversation folds to a pill above the input; it's kept until Clear. */
+    val threadHidden = MutableStateFlow(false)
+    private fun push(vararg t: Turn) { thread.value = thread.value + t; threadHidden.value = false }
     private fun replace(id: String, f: (Turn) -> Turn) { thread.value = thread.value.map { if (it.id == id) f(it) else it } }
     private fun done(text: String, ids: List<String>, undo: (() -> Unit)?, said: String) {
-        push(Turn.You(text = said, files = attachments.value.size), Turn.Did(text = text, ids = ids, undo = undo))
+        push(Turn.You(text = said, files = attachments.value.map { it.read.name }), Turn.Did(text = text, ids = ids, undo = undo))
         catchField.clearText(); attachments.value = emptyList(); lastText = ""; resetParts()
     }
     fun undoTurn(id: String) {
@@ -393,7 +395,7 @@ class AtlasViewModel(app: Application, private val saved: SavedStateHandle) : An
         val what = if (docs.size == 1) (if (files[0].read.mime.startsWith("image/")) "Photo" else "File") else "${docs.size} ${if (files.all { it.read.mime.startsWith("image/") }) "photos" else "files"}"
         val where = links.firstOrNull { it.type == ObjType.PROJECT }?.let { sp -> if (made.any { it.id == sp.id }) "added to ${sp.title} (new space)" else "added to ${sp.title}" }
             ?: links.firstOrNull()?.let { "linked to ${it.title}" } ?: "saved"
-        done("$what $where".replaceFirstChar { it.uppercase() }, docs, { docs.forEach { repo.trash(it) }; made.forEach { repo.trash(it.id) } }, p?.raw.orEmpty().ifBlank { if (docs.size == 1) "1 attachment" else "${docs.size} attachments" })
+        done("$what $where".replaceFirstChar { it.uppercase() }, docs, { docs.forEach { repo.trash(it) }; made.forEach { repo.trash(it.id) } }, p?.raw.orEmpty())
     }
 
     private fun relFor(child: ObjType, parent: KObject) = when {

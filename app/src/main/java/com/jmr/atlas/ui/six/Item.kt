@@ -22,6 +22,9 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.shadow
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
@@ -60,6 +63,7 @@ fun ItemScreen(vm: AtlasViewModel, snap: Snapshot, id: String) {
     val wide = LocalWide.current
     val today = LocalDate.now()
     val backTo = remember(snap, id) { Briefing.projectOf(snap, o)?.title ?: if (vm.stack.value.size > 1) "Back" else "Home" }
+    if (o.type == ObjType.DOCUMENT || o.type == ObjType.IMAGE) { FilePage(vm, snap, o, backTo); return }
 
     val left: @Composable ColumnScope.() -> Unit = {
         Hero(o, today, snap)
@@ -76,6 +80,7 @@ fun ItemScreen(vm: AtlasViewModel, snap: Snapshot, id: String) {
     Column(Modifier.fillMaxSize().testTag("item_page")) {
         Row(Modifier.padding(horizontal = pad).padding(top = 16.dp, bottom = 12.dp), verticalAlignment = Alignment.CenterVertically) {
             BackPill(backTo, { vm.back() })
+            HomeButton(vm)
             Spacer(Modifier.weight(1f))
             RoundIcon(Icons.Outlined.Edit, "Edit", { vm.show(Overlay.Edit(o.id)) }, Modifier.testTag("edit"), container = Color.Transparent, tint = Atlas.SecondaryText)
             More(vm, o)
@@ -252,5 +257,137 @@ private fun Connected(vm: AtlasViewModel, s: Snapshot, o: KObject) {
             }
         }
         if (nb.size > 14) Text("and ${nb.size - 14} more", style = T.meta, color = Atlas.SecondaryText, modifier = Modifier.padding(start = 4.dp, top = 4.dp))
+    }
+}
+
+
+/** Home from anywhere (0.7.1). Hidden when Back already goes home. */
+@Composable
+fun HomeButton(vm: AtlasViewModel) {
+    val stack by vm.stack.collectAsState()
+    if (stack.size > 2) { Spacer(Modifier.width(8.dp)); RoundIcon(Icons.Outlined.Home, "Home", { vm.home() }, Modifier.testTag("go_home"), container = Atlas.Chip) }
+}
+
+/**
+ * A file's page (0.7.1). A file is the thing itself: its page leads with what it looks like (the photo, the PDF's first
+ * page, or its format badge), its name and format, and Open — then where it's filed and what Atlas read from it.
+ * Nothing empty is shown.
+ */
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+private fun FilePage(vm: AtlasViewModel, s: Snapshot, o: KObject, backTo: String) {
+    val platform = LocalPlatform.current
+    val wide = LocalWide.current
+    val (img, pages) = com.jmr.atlas.ui.cards.rememberPreview(o)
+    val k = FileKind.of(o)
+    var showAll by remember { mutableStateOf(false) }
+    val aiStatus by vm.ai.status.collectAsState()
+    val aiBusy by vm.aiBusy.collectAsState()
+    val added = Board.shortDate(Instant.ofEpochMilli(o.created).atZone(ZoneId.systemDefault()).toLocalDate())
+    val preview: @Composable ColumnScope.() -> Unit = {
+        Box(Modifier.fillMaxWidth().heightIn(min = 200.dp, max = if (wide) 560.dp else 420.dp).shadow(6.dp, RoundedCornerShape(22.dp)).clip(RoundedCornerShape(22.dp))
+            .background(if (img != null && o.type == ObjType.IMAGE) Color(0xFF1E1724) else Atlas.Surface)
+            .clickable(enabled = o.vaultFile.isNotBlank(), role = Role.Button, onClickLabel = "Open ${o.title}") { platform.openFile(o) }.testTag("file_preview"), contentAlignment = Alignment.Center) {
+            if (img != null) Image(img, "Preview of ${o.title}", Modifier.fillMaxWidth(), contentScale = if (o.type == ObjType.IMAGE) ContentScale.Fit else ContentScale.FillWidth, alignment = Alignment.TopCenter)
+            else Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.padding(vertical = 40.dp)) {
+                FileBadge(k, 96.dp); Spacer(Modifier.height(12.dp)); Text("Tap to open", style = T.meta, color = Atlas.SecondaryText)
+            }
+        }
+        if (pages > 1) Text("Page 1 of $pages · tap to read it all", style = T.meta, color = Atlas.SecondaryText, modifier = Modifier.padding(top = 8.dp).align(Alignment.CenterHorizontally))
+    }
+    val info: @Composable ColumnScope.() -> Unit = {
+        Row(verticalAlignment = Alignment.Top) {
+            FileBadge(k, 44.dp); Spacer(Modifier.width(14.dp))
+            Column(Modifier.weight(1f)) {
+                Text(FileKind.name(o), style = T.band.copy(fontSize = 22.sp, lineHeight = 27.sp), color = Atlas.DeepPlum, maxLines = 3, overflow = TextOverflow.Ellipsis, modifier = Modifier.testTag("file_name"))
+                Text(listOfNotNull(k.label, if (pages > 1) "$pages pages" else null, if (o.sizeBytes > 0) FileKind.size(o.sizeBytes) else null, o.kind.takeIf { it.isNotBlank() && it != "Other" }, "added $added").joinToString(" · "),
+                    style = T.meta.copy(fontSize = 14.sp), color = Atlas.SecondaryText)
+            }
+        }
+        Spacer(Modifier.height(16.dp))
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+            Box(Modifier.weight(1f).height(52.dp).clip(RoundedCornerShape(18.dp)).background(Atlas.DeepPlum).clickable(enabled = o.vaultFile.isNotBlank(), role = Role.Button) { platform.openFile(o) }.testTag("file_open"),
+                contentAlignment = Alignment.Center) {
+                Row(verticalAlignment = Alignment.CenterVertically) { Icon(Icons.Outlined.OpenInNew, null, Modifier.size(18.dp), tint = Color.White); Spacer(Modifier.width(8.dp)); Text("Open", style = T.row.copy(fontSize = 16.sp), color = Color.White) }
+            }
+            FileAction(Icons.Outlined.Share, "Share", o.vaultFile.isNotBlank()) { platform.shareFile(o) }
+            FileAction(Icons.Outlined.DriveFileRenameOutline, "Rename") { vm.show(Overlay.Edit(o.id)) }
+            FileAction(Icons.Outlined.CreateNewFolder, "File in…") { vm.show(Overlay.Connect(o.id)) }
+        }
+        Spacer(Modifier.height(24.dp))
+        Connected(vm, s, o)
+        val facts = s.detailsOf(o.id, DetailKind.FACT)
+        if (o.docDate != null || facts.isNotEmpty()) {
+            Spacer(Modifier.height(24.dp)); Eyebrow("Atlas read"); Spacer(Modifier.height(6.dp))
+            Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(18.dp)).background(Atlas.Surface).padding(horizontal = 16.dp, vertical = 6.dp)) {
+                o.docDate?.let { FactRow("Dated", Board.shortDate(it)) { vm.show(Overlay.Edit(o.id)) } }
+                facts.forEach { f ->
+                    val v = when { f.flag -> "••••" + f.value.takeLast(4); f.type == FieldType.DATE -> runCatching { Board.shortDate(LocalDate.parse(f.value)) }.getOrDefault(f.value); else -> f.value }
+                    FactRow(f.label, v) { vm.show(Overlay.Edit(o.id)) }
+                }
+            }
+        }
+        if (o.summary.isNotBlank()) { Spacer(Modifier.height(24.dp)); Eyebrow("Summary · written on this phone"); Spacer(Modifier.height(6.dp)); Text(o.summary, style = T.body, color = Atlas.DeepPlum) }
+        else if (vm.brainReady() && o.extracted.isNotBlank()) {
+            Spacer(Modifier.height(16.dp))
+            Box(Modifier.clip(RoundedCornerShape(14.dp)).border(1.5.dp, Atlas.Border, RoundedCornerShape(14.dp)).clickable(enabled = aiBusy != o.id, role = Role.Button) { vm.summarize(o.id) }.padding(horizontal = 14.dp, vertical = 10.dp)) {
+                Row(verticalAlignment = Alignment.CenterVertically) { Icon(Sparkle, null, Modifier.size(16.dp), tint = Atlas.Primary); Spacer(Modifier.width(8.dp)); Text(if (aiBusy == o.id) "Reading…" else "Summarize on this phone", style = T.metaStrong.copy(fontSize = 14.sp), color = Atlas.DeepPlum) }
+            }
+        }
+        if (o.extracted.isNotBlank()) {
+            Spacer(Modifier.height(24.dp))
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Eyebrow("Text in it", Modifier.weight(1f))
+                Text("Copy", style = T.metaStrong, color = Atlas.Primary, modifier = Modifier.clip(RoundedCornerShape(8.dp)).clickable(role = Role.Button) { platform.copy(o.title, o.extracted) }.padding(8.dp))
+            }
+            androidx.compose.foundation.text.selection.SelectionContainer {
+                Text(if (showAll) o.extracted else o.extracted.replace('\n', ' ').take(260) + if (o.extracted.length > 260) "…" else "", style = T.body.copy(fontSize = 15.sp), color = Atlas.DeepPlum,
+                    modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(18.dp)).background(Atlas.Surface).clickable(enabled = !showAll && o.extracted.length > 260) { showAll = true }.padding(16.dp))
+            }
+        }
+        if (o.body.isNotBlank()) { Spacer(Modifier.height(24.dp)); Eyebrow("Your note"); Spacer(Modifier.height(6.dp)); Text(o.body, style = T.body, color = Atlas.DeepPlum) }
+        Spacer(Modifier.height(24.dp))
+        AtlasDid(originLine(o).removeSuffix("."), Modifier, Atlas.SecondaryText)
+        HowItGotHereLinks(vm, s, o)
+    }
+    Column(Modifier.fillMaxSize().testTag("item_page")) {
+        Row(Modifier.padding(horizontal = pad).padding(top = 16.dp, bottom = 12.dp), verticalAlignment = Alignment.CenterVertically) {
+            BackPill(backTo, { vm.back() })
+            HomeButton(vm)
+            Spacer(Modifier.weight(1f))
+            More(vm, o)
+        }
+        if (wide) Row(Modifier.weight(1f).padding(horizontal = pad), horizontalArrangement = Arrangement.spacedBy(28.dp)) {
+            Column(Modifier.weight(0.9f).fillMaxHeight().verticalScroll(rememberScrollState()).padding(bottom = 140.dp), content = preview)
+            Column(Modifier.weight(1.1f).fillMaxHeight().verticalScroll(rememberScrollState()).padding(bottom = 140.dp), content = info)
+        } else Column(Modifier.weight(1f).verticalScroll(rememberScrollState()).padding(horizontal = pad).padding(bottom = 140.dp)) {
+            preview(); Spacer(Modifier.height(20.dp)); info()
+        }
+    }
+}
+
+@Composable
+private fun FileAction(icon: ImageVector, label: String, enabled: Boolean = true, onClick: () -> Unit) =
+    Box(Modifier.size(52.dp).clip(RoundedCornerShape(18.dp)).background(Atlas.Chip).clickable(enabled = enabled, role = Role.Button, onClickLabel = label, onClick = onClick).semantics { contentDescription = label },
+        contentAlignment = Alignment.Center) { Icon(icon, null, Modifier.size(21.dp), tint = if (enabled) Atlas.DeepPlum else Atlas.Hint) }
+
+@Composable
+private fun FactRow(label: String, value: String, onClick: () -> Unit) =
+    Row(Modifier.fillMaxWidth().heightIn(min = 48.dp).clickable(role = Role.Button, onClickLabel = "Fix $label", onClick = onClick).padding(vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+        Text(label, style = T.meta.copy(fontSize = 14.sp), color = Atlas.SecondaryText, modifier = Modifier.width(120.dp))
+        Text(value, style = T.metaStrong.copy(fontSize = 15.sp), color = Atlas.DeepPlum, modifier = Modifier.weight(1f))
+    }
+
+/** The Atlas-made and suggested links from "How it got here", without the heading (used on the file page). */
+@Composable
+private fun HowItGotHereLinks(vm: AtlasViewModel, s: Snapshot, o: KObject) {
+    s.relationsOf(o.id).filter { it.review == Review.PROPOSED }.forEach { r ->
+        val other = s.objects[r.other(o.id)] ?: return@forEach
+        Spacer(Modifier.height(10.dp))
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            AtlasDid("Atlas thinks this goes with ${other.title}", Modifier.weight(1f), Atlas.DeepPlum)
+            Spacer(Modifier.width(8.dp)); SmallButton("Yes", Atlas.PrimaryContainer) { vm.repo.approve(r.id) }
+            Spacer(Modifier.width(6.dp)); SmallButton("No") { vm.repo.reject(r.id) }
+        }
     }
 }

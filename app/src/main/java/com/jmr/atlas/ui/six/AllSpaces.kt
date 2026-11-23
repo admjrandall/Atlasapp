@@ -186,6 +186,7 @@ fun LookPicker(vm: AtlasViewModel, snap: Snapshot, p: KObject, onDone: () -> Uni
  */
 @Composable
 fun KindList(vm: AtlasViewModel, snap: Snapshot, kind: Board.Kind, q: String) {
+    val platform = com.jmr.atlas.LocalPlatform.current
     val items = remember(snap, kind) { kindItems(snap, kind) }
     val shown = remember(items, q) {
         if (q.isBlank()) items else vm.find(q).map { it.o.id }.toSet().let { ids -> items.filter { it.id in ids || it.title.contains(q.trim(), true) } }
@@ -211,7 +212,7 @@ fun KindList(vm: AtlasViewModel, snap: Snapshot, kind: Board.Kind, q: String) {
                     Text("RECENT", style = T.eyebrow, color = Atlas.SecondaryText, modifier = Modifier.padding(start = 4.dp, bottom = 8.dp))
                     Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(14.dp)) {
                         recent.forEach { o ->
-                            Column(Modifier.width(76.dp).clip(RoundedCornerShape(14.dp)).clickable(role = Role.Button, onClickLabel = "Open ${o.title}") { vm.reveal(o.id) }, horizontalAlignment = Alignment.CenterHorizontally) {
+                            Column(Modifier.width(76.dp).clip(RoundedCornerShape(14.dp)).clickable(role = Role.Button, onClickLabel = "Open ${o.title}") { openThing(vm, platform, o) }, horizontalAlignment = Alignment.CenterHorizontally) {
                                 TypeMark(snap, o, 56.dp); Spacer(Modifier.height(6.dp))
                                 Text(if (people) o.title.split(" ").first() else o.title, style = T.meta.copy(fontSize = 13.sp), color = Atlas.DeepPlum, maxLines = 1, overflow = TextOverflow.Ellipsis)
                             }
@@ -223,7 +224,7 @@ fun KindList(vm: AtlasViewModel, snap: Snapshot, kind: Board.Kind, q: String) {
                 item(key = "h_$k") { Text(k, style = T.metaStrong.copy(fontSize = 14.sp), color = Atlas.Primary, modifier = Modifier.padding(start = 4.dp, top = 12.dp, bottom = 4.dp)) }
                 items(list, key = { it.id }) { o ->
                     val (label, lc) = humanLabel(o, snap, today)
-                    Row(Modifier.fillMaxWidth().background(Atlas.Surface).clickable(role = Role.Button, onClickLabel = "Open ${o.title}") { vm.reveal(o.id) }.heightIn(min = 60.dp).padding(horizontal = 12.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Row(Modifier.fillMaxWidth().background(Atlas.Surface).clickable(role = Role.Button, onClickLabel = "Open ${o.title}") { openThing(vm, platform, o) }.heightIn(min = 60.dp).padding(horizontal = 12.dp), verticalAlignment = Alignment.CenterVertically) {
                         TypeMark(snap, o, 36.dp); Spacer(Modifier.width(12.dp))
                         Column(Modifier.weight(1f)) {
                             Text(o.title, style = T.tileTitle.copy(fontSize = 15.sp), color = Atlas.DeepPlum, maxLines = 1, overflow = TextOverflow.Ellipsis)
@@ -260,6 +261,7 @@ fun kindItems(s: Snapshot, k: Board.Kind): List<KObject> = when (k) {
 fun PageTop(vm: AtlasViewModel, title: String, sub: String, trailing: @Composable () -> Unit = {}) =
     Row(Modifier.fillMaxWidth().padding(horizontal = pad).padding(top = 16.dp, bottom = 12.dp), verticalAlignment = Alignment.CenterVertically) {
         RoundIcon(Icons.AutoMirrored.Outlined.ArrowBack, "Back", { vm.back() }, Modifier.testTag("back"))
+        HomeButton(vm)
         Spacer(Modifier.width(14.dp))
         Column(Modifier.weight(1f)) {
             Text(title, style = if (LocalWide.current) T.title else T.titleCompact, color = Atlas.DeepPlum, maxLines = 1)
