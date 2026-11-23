@@ -37,11 +37,22 @@ object Atlas {
     val Error = Color(0xFFB3263E)
     val BlueText = Color(0xFF2F5C93)        // accessible foreground on powder blue (derived, 6.0:1)
 
+    // 0.6 — paper, ink and the band tints behind grouped tiles (decorative only; text on them is DeepPlum).
+    val Hairline = Color(0xFFEEE7F2)        // decorative only
+    val Hint = Color(0xFF8E829A)            // placeholder text and inactive icons (3.4:1, never for content)
+    val Chip = Color(0xFFF1E9F6)
+    val BandMint = Color(0xFFEAF5F2)
+    val BandLilac = Color(0xFFF3ECF8)
+    val BandBlue = Color(0xFFEBF1FA)
+    val BandPeach = Color(0xFFFCEEEA)
+    val bands = listOf(BandMint, BandLilac, BandBlue, BandPeach)
+
     val all = mapOf(
         "background" to Background, "surface" to Surface, "surfaceSecondary" to SurfaceSecondary, "primary" to Primary,
         "primaryContainer" to PrimaryContainer, "orchid" to Orchid, "peach" to Peach, "coral" to Coral, "coralText" to CoralText,
         "coolMint" to CoolMint, "deepTeal" to DeepTeal, "powderBlue" to PowderBlue, "deepPlum" to DeepPlum,
         "secondaryText" to SecondaryText, "border" to Border, "error" to Error, "blueText" to BlueText,
+        "hairline" to Hairline, "hint" to Hint, "chip" to Chip, "bandMint" to BandMint, "bandLilac" to BandLilac, "bandBlue" to BandBlue, "bandPeach" to BandPeach,
     )
 }
 
@@ -74,11 +85,37 @@ fun icon(t: ObjType): ImageVector = when (t) {
     ObjType.DECISION -> Icons.Outlined.Gavel
 }
 
-val Flex: FontFamily = FontFamily(
+private fun flex(width: Float) = FontFamily(
     listOf(300, 400, 500, 600, 700, 800).map { w ->
-        Font(R.font.roboto_flex, weight = FontWeight(w), variationSettings = FontVariation.Settings(FontVariation.weight(w)))
+        Font(R.font.roboto_flex, weight = FontWeight(w), variationSettings = FontVariation.Settings(FontVariation.weight(w), FontVariation.width(width)))
     }
 )
+
+/** Roboto Flex at normal width, and narrowed (wdth 82) for headlines, band names and the briefing sentence. */
+val Flex: FontFamily = flex(100f)
+val FlexNarrow: FontFamily = flex(82f)
+
+/** 0.6 type roles. Sizes are the Fold inner screen's; `compact` variants are for the cover screen and phones. */
+object T {
+    private fun t(f: FontFamily, size: Int, w: Int, lh: Int, ls: Double = 0.0) = TextStyle(fontFamily = f, fontSize = size.sp, fontWeight = FontWeight(w), lineHeight = lh.sp, letterSpacing = ls.sp)
+    val eyebrow = t(Flex, 12, 700, 16, 1.4)
+    val sentence = t(FlexNarrow, 36, 400, 48, -0.4)
+    val sentenceCompact = t(FlexNarrow, 28, 400, 38, -0.3)
+    val title = t(FlexNarrow, 34, 800, 38, -0.3)
+    val titleCompact = t(FlexNarrow, 28, 800, 32, -0.2)
+    val heroTitle = t(FlexNarrow, 30, 800, 34, -0.2)
+    val cover = t(FlexNarrow, 22, 800, 26)
+    val band = t(FlexNarrow, 18, 800, 22)
+    val tileTitle = t(Flex, 16, 700, 20)
+    val tileQuote = t(FlexNarrow, 18, 600, 22)
+    val tileLabel = t(Flex, 11, 700, 14, 1.2)
+    val body = t(Flex, 16, 400, 23)
+    val row = t(Flex, 17, 600, 22)
+    val meta = t(Flex, 13, 400, 18)
+    val metaStrong = t(Flex, 13, 650, 18)
+    val input = t(Flex, 17, 400, 24)
+    val preview = t(Flex, 20, 400, 30)
+}
 
 private fun s(size: Int, w: Int, lh: Int, ls: Double = 0.0) = TextStyle(fontFamily = Flex, fontSize = size.sp, fontWeight = FontWeight(w), lineHeight = lh.sp, letterSpacing = ls.sp)
 

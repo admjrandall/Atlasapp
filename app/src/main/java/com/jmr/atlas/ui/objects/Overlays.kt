@@ -21,7 +21,6 @@ import com.jmr.atlas.ui.*
 import com.jmr.atlas.ui.components.*
 import com.jmr.atlas.ui.theme.Atlas
 import com.jmr.atlas.ui.theme.icon
-import com.jmr.atlas.ui.universe.slotsFor
 import java.time.Instant
 import java.time.LocalDate
 import java.time.ZoneOffset
@@ -35,9 +34,7 @@ fun Overlays(vm: AtlasViewModel, snap: Snapshot) {
         is Overlay.Edit -> obj(o.id) { com.jmr.atlas.ui.cards.EditorScreen(vm, snap, it, null, null) }()
         is Overlay.Create -> com.jmr.atlas.ui.cards.EditorScreen(vm, snap, null, o.type, o.linkTo, o.title)
         is Overlay.Connect -> obj(o.id) { ConnectDialog(vm, snap, it, o.types) }()
-        is Overlay.Cluster -> ClusterSheet(vm, snap, o)
-        Overlay.FocusPicker -> FocusPicker(vm, snap)
-        Overlay.Capture -> CaptureSheet(vm, snap)
+        is Overlay.RenameBand -> RenameBandDialog(vm, o)
         is Overlay.AddField -> obj(o.id) { com.jmr.atlas.ui.cards.AddFieldSheet(vm, it) }()
         is Overlay.PostUpdate -> obj(o.id) { com.jmr.atlas.ui.cards.PostUpdateSheet(vm, it) }()
         is Overlay.AddLine -> obj(o.id) { com.jmr.atlas.ui.cards.AddLineSheet(vm, it, o.kind) }()
@@ -47,7 +44,7 @@ fun Overlays(vm: AtlasViewModel, snap: Snapshot) {
         Overlay.BriefingTime -> BriefingTimeDialog(vm)
         Overlay.RemoveExample -> AlertDialog({ vm.show(null) }, title = { Text("Remove the example workspace?") },
             text = { Text("Deletes the ${snap.objects.values.count { it.origin == Origin.EXAMPLE }} example items. Anything you added stays.") },
-            confirmButton = { TextButton({ vm.repo.clearExample(); vm.focusOn(null); vm.top(Route.Now); vm.show(null); vm.say("Example removed.") }) { Text("Remove") } },
+            confirmButton = { TextButton({ vm.repo.clearExample(); vm.home(); vm.show(null); vm.say("Example removed.") }) { Text("Remove") } },
             dismissButton = { TextButton({ vm.show(null) }) { Text("Keep") } })
         is Overlay.ConfirmPurge -> obj(o.id) { item ->
             AlertDialog({ vm.show(null) }, title = { Text("Delete “${item.title}” forever?") },
@@ -74,12 +71,19 @@ private fun BriefingTimeDialog(vm: AtlasViewModel) {
         dismissButton = { TextButton({ vm.show(null) }) { Text("Cancel") } })
 }
 
-@OptIn(ExperimentalMaterial3Api::class)
+/** Rename a band on a project board. Clearing the name goes back to Atlas's name. */
 @Composable
-fun CaptureSheet(vm: AtlasViewModel, snap: Snapshot) {
-    ModalBottomSheet({ vm.show(null); vm.lastCapture.value = null }, containerColor = Atlas.Surface, sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)) {
-        com.jmr.atlas.ui.screens.CaptureContent(vm, snap)
-    }
+private fun RenameBandDialog(vm: AtlasViewModel, o: Overlay.RenameBand) {
+    var name by remember { mutableStateOf(o.current) }
+    AlertDialog({ vm.show(null) }, title = { Text("Rename band") }, text = {
+        Column {
+            OutlinedTextField(name, { name = it.take(40) }, singleLine = true, label = { Text("Name") }, modifier = Modifier.fillMaxWidth().testTag("band_rename"),
+                keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.Sentences))
+            Spacer(Modifier.height(6.dp))
+            Text("Leave it empty to let Atlas name it again.", style = MaterialTheme.typography.bodySmall, color = Atlas.SecondaryText)
+        }
+    }, confirmButton = { TextButton({ vm.renameBand(o.projectId, o.key, name); vm.show(null) }) { Text("Save") } },
+        dismissButton = { TextButton({ vm.show(null) }) { Text("Cancel") } })
 }
 
 @Composable
@@ -111,44 +115,4 @@ fun ConnectDialog(vm: AtlasViewModel, snap: Snapshot, o: KObject, types: Set<Obj
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
-@Composable
-fun ClusterSheet(vm: AtlasViewModel, snap: Snapshot, c: Overlay.Cluster) {
-    val focus = c.focusId?.let { snap.objects[it] }
-    val slot = remember(snap, c) { slotsFor(snap, c.focusId).first { it.kind == c.kind } }
-    ModalBottomSheet({ vm.show(null) }, containerColor = Atlas.Surface) {
-        Column(Modifier.padding(horizontal = 20.dp).padding(bottom = 24.dp).testTag("cluster_sheet")) {
-            Text(if (slot.total == 0) slot.label(focus) else "${slot.label(focus)} · ${slot.total}", style = MaterialTheme.typography.titleLarge)
-            if (focus != null) Text(focus.title, style = MaterialTheme.typography.bodySmall, color = Atlas.SecondaryText)
-            Row(Modifier.padding(vertical = 12.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                FilledTonalButton({ vm.show(Overlay.Create(c.kind.createType, c.focusId)) }) { Icon(Icons.Outlined.Add, null, Modifier.size(18.dp)); Spacer(Modifier.width(6.dp)); Text("New ${c.kind.createType.label.lowercase()}") }
-                if (focus != null) OutlinedButton({ vm.show(Overlay.Connect(focus.id, c.kind.types)) }) { Icon(Icons.Outlined.AddLink, null, Modifier.size(18.dp)); Spacer(Modifier.width(6.dp)); Text("Connect existing") }
-            }
-            LazyColumn(Modifier.heightIn(max = 520.dp)) {
-                items(slot.items, key = { it.obj.id }) { it ->
-                    ObjRow(it.obj, snap, proposed = it.proposed, onToggle = { vm.repo.toggleDone(it.obj.id) }) { vm.show(null); vm.focusOn(it.obj.id) }
-                }
-            }
-        }
-    }
-}
-
-@Composable
-fun FocusPicker(vm: AtlasViewModel, snap: Snapshot) {
-    var q by remember { mutableStateOf("") }
-    val order = listOf(ObjType.PROJECT, ObjType.PERSON, ObjType.COLLECTION, ObjType.IDEA, ObjType.DOCUMENT, ObjType.NOTE, ObjType.TASK, ObjType.EVENT, ObjType.IMAGE, ObjType.LINK, ObjType.DECISION)
-    val list = snap.live.filter { q.isBlank() || it.title.contains(q, true) }.sortedWith(compareBy<KObject> { order.indexOf(it.type) }.thenByDescending { snap.relationsOf(it.id).size }).take(80)
-    AlertDialog({ vm.show(null) }, title = { Text("Focus the map on…") }, modifier = Modifier.testTag("focus_dialog"), text = {
-        Column {
-            OutlinedTextField(q, { q = it }, Modifier.fillMaxWidth(), placeholder = { Text("Search…") }, singleLine = true, leadingIcon = { Icon(Icons.Outlined.Search, null) })
-            LazyColumn(Modifier.heightIn(max = 420.dp).padding(top = 8.dp)) {
-                item {
-                    ListItem({ Text("My Universe") }, supportingContent = { Text("Everything, summarized") }, leadingContent = { AtlasMark(36.dp) },
-                        modifier = Modifier.clickableRow { vm.show(null); vm.focusOn(null) })
-                }
-                items(list, key = { it.id }) { o -> ObjRow(o, snap, sub = "${typeLine(o)} · ${snap.relationsOf(o.id).size} connections") { vm.show(null); vm.focusOn(o.id) } }
-            }
-        }
-    }, confirmButton = {}, dismissButton = { TextButton({ vm.show(null) }) { Text("Close") } })
-}
-
 fun Modifier.clickableRow(onClick: () -> Unit) = this.then(Modifier.clickable(onClick = onClick))

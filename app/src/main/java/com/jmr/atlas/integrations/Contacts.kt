@@ -14,8 +14,8 @@ import com.jmr.atlas.model.*
 import java.time.LocalDate
 
 /**
- * Two-way link between Atlas people and phone contacts (ContactsContract). Only contacts you add or connect join the
- * Universe; the rest stay searchable and are read on demand. Contact fields (name, work, phones, emails, addresses,
+ * Two-way link between Atlas people and phone contacts (ContactsContract). Only contacts you add or connect join
+ * Atlas; the rest stay searchable and are read on demand. Contact fields (name, work, phones, emails, addresses,
  * websites, dates, nickname) live on the phone contact; Atlas-only fields never leave Atlas.
  * Sources: developer.android.com/reference/android/provider/ContactsContract (CommonDataKinds), checked 2026-11-22.
  */

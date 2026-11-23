@@ -35,9 +35,9 @@ import java.time.LocalDate
 fun TaskCard(vm: AtlasViewModel, snap: Snapshot, o: KObject) {
     val platform = LocalPlatform.current
     val today = LocalDate.now()
-    Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(horizontal = 16.dp).padding(bottom = 32.dp).testTag("task_card")) {
+    Column(cardModifier("task_card")) {
         CardTopBar(vm, o)
-        Row(verticalAlignment = Alignment.Top) {
+        if (!LocalEmbedded.current) Row(verticalAlignment = Alignment.Top) {
             Checkbox(o.done, { vm.repo.toggleDone(o.id) }, Modifier.size(48.dp).semantics { contentDescription = if (o.done) "Mark not done" else "Complete" }.testTag("task_check"),
                 colors = CheckboxDefaults.colors(checkedColor = Atlas.DeepTeal, uncheckedColor = Atlas.Primary))
             Spacer(Modifier.width(8.dp))
@@ -60,7 +60,7 @@ fun TaskCard(vm: AtlasViewModel, snap: Snapshot, o: KObject) {
         val people = rels.filter { it.first.type == ObjType.PERSON }.map { it.first }
         val blocks = rels.filter { it.second.type == RelType.DEPENDS_ON }
         Spacer(Modifier.height(14.dp))
-        Box16 {
+        if (!LocalEmbedded.current) Box16 {
             var any = false
             project?.let { any = true; FieldRow(Icons.Outlined.FolderOpen, it.title, "Project", onClick = { vm.open(it.id) }) { Icon(Icons.AutoMirrored.Outlined.KeyboardArrowRight, null, tint = Atlas.SecondaryText) } }
             people.forEach { p -> if (any) Divider16(); any = true; FieldRow(Icons.Outlined.Person, p.title, "With", onClick = { vm.open(p.id) }) { Icon(Icons.AutoMirrored.Outlined.KeyboardArrowRight, null, tint = Atlas.SecondaryText) } }

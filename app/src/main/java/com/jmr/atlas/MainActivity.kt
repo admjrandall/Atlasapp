@@ -157,15 +157,15 @@ class MainActivity : ComponentActivity(), Platform {
         when (i?.action) {
             Intent.ACTION_SEND -> handleShare(i)
             ACTION_QUICK -> when (i.getStringExtra(EXTRA_MODE)) {
-                CaptureWidget.MODE_VOICE -> dictate { vm.captureText(it, voice = true); vm.show(Overlay.Capture) }
+                CaptureWidget.MODE_VOICE -> dictate { vm.home(); vm.openCatch(it) }
                 CaptureWidget.MODE_SCAN -> scan()
                 CaptureWidget.MODE_LINK -> window.decorView.post {   // clipboard is readable only once the window has focus
                     window.decorView.postDelayed({
                         val url = clipboardUrl()
-                        if (url != null) { vm.captureLink(url); vm.show(Overlay.Capture) } else { vm.show(Overlay.Capture); vm.say("No link on the clipboard.") }
+                        if (url != null) vm.captureLink(url) else { vm.openCatch(); vm.say("No link on the clipboard.") }
                     }, 300)
                 }
-                else -> vm.show(Overlay.Capture)
+                else -> { vm.home(); vm.openCatch() }
             }
         }
         i?.getStringExtra(EXTRA_OPEN)?.let { vm.open(it) }
@@ -186,7 +186,6 @@ class MainActivity : ComponentActivity(), Platform {
             }
             else -> return
         }
-        vm.show(Overlay.Capture)
     }
 
     private fun appName(pkg: String) = when (pkg) {

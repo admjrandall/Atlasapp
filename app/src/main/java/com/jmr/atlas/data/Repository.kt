@@ -191,7 +191,7 @@ class Repository(context: Context, dbName: String? = "atlas.db", encrypted: Bool
         write { d -> with(d) { fresh.forEach { putSuggestion(it.copy(captureId = captureId)) }; putCapture(cap.copy(status = CaptureStatus.READY_FOR_REVIEW)) } }
     }
 
-    /** Undo an automatic connection from the Now screen: removes the edge and records the suggestion as rejected. */
+    /** Undo an automatic connection: removes the edge and records the suggestion as rejected. */
     fun undoAuto(sugId: String) {
         val s = snap.suggestions.firstOrNull { it.id == sugId } ?: return
         val cap = snap.captures.firstOrNull { it.id == s.captureId } ?: return

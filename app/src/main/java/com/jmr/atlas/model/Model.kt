@@ -39,6 +39,8 @@ enum class Repeat(val label: String) { NONE("Doesn't repeat"), DAILY("Every day"
 enum class DetailKind(val label: String, val toContact: Boolean = false) {
     PHONE("Phone", true), EMAIL("Email", true), ADDRESS("Address", true), WEBSITE("Website", true), SOCIAL("Social", true), DATE("Date", true),
     CUSTOM("Field"), FACT("Key fact"), REMEMBER("Thing to remember"), STEP("Step"), UPDATE("Update"), HIGHLIGHT("Highlight"),
+    /** A band's name on a project board: objectId = project, label = band key, value = name; origin AI or USER. */
+    BAND("Band name"),
 }
 
 /** The ten custom field types (design I06). SECRET is a flag, not a type: any text-like value can be masked. */

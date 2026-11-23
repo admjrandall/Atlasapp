@@ -87,7 +87,7 @@ fun DocumentCard(vm: AtlasViewModel, snap: Snapshot, o: KObject) {
     val aiStatus by vm.ai.status.collectAsState()
     val aiBusy by vm.aiBusy.collectAsState()
     var showAll by remember { mutableStateOf(false) }
-    Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(horizontal = 16.dp).padding(bottom = 32.dp).testTag("document_card")) {
+    Column(cardModifier("document_card")) {
         CardTopBar(vm, o)
         Surface(onClick = { if (o.vaultFile.isNotBlank()) platform.openFile(o) }, shape = RoundedCornerShape(22.dp), color = Atlas.Surface, border = BorderStroke(1.dp, Atlas.Border), shadowElevation = 2.dp,
             modifier = Modifier.fillMaxWidth().heightIn(min = 160.dp, max = 380.dp)) {
@@ -102,7 +102,7 @@ fun DocumentCard(vm: AtlasViewModel, snap: Snapshot, o: KObject) {
             Pill(listOfNotNull(fmt, if (pages > 1) "$pages pages" else null, if (o.sizeBytes > 0) size(o.sizeBytes) else null).joinToString(" · "), container = Atlas.SurfaceSecondary, content = Atlas.DeepPlum)
         }
         Spacer(Modifier.height(8.dp))
-        Text(o.title, style = MaterialTheme.typography.headlineSmall)
+        if (!LocalEmbedded.current) Text(o.title, style = MaterialTheme.typography.headlineSmall)
         ActionRow(listOf(
             CardAction(Icons.Outlined.OpenInNew, "Open", o.vaultFile.isNotBlank()) { platform.openFile(o) },
             CardAction(Icons.Outlined.Share, "Share", o.extracted.isNotBlank()) { platform.launch(Intent.createChooser(Intent(Intent.ACTION_SEND).setType("text/plain").putExtra(Intent.EXTRA_SUBJECT, o.title).putExtra(Intent.EXTRA_TEXT, o.extracted.take(20_000)), o.title)) },
@@ -161,21 +161,22 @@ fun LinkCard(vm: AtlasViewModel, snap: Snapshot, o: KObject) {
     val (img, _) = rememberPreview(o)
     val aiStatus by vm.ai.status.collectAsState()
     val aiBusy by vm.aiBusy.collectAsState()
-    Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(bottom = 32.dp).testTag("link_card")) {
-        Box {
+    Column(cardModifier("link_card", 0)) {
+        val embedded = LocalEmbedded.current
+        if (!embedded) Box {
             if (img != null) Image(img, null, Modifier.fillMaxWidth().height(180.dp), contentScale = ContentScale.Crop)
             else CoverBand(o.id.hashCode(), Atlas.PowderBlue, Atlas.Surface, Atlas.Peach)
             CardTopBar(vm, o, overImage = true)
         }
-        Column(Modifier.padding(horizontal = 16.dp)) {
+        Column(Modifier.padding(horizontal = if (embedded) 0.dp else 16.dp)) {
             Spacer(Modifier.height(12.dp))
-            Row(verticalAlignment = Alignment.CenterVertically) {
+            if (!embedded) Row(verticalAlignment = Alignment.CenterVertically) {
                 Box(Modifier.size(20.dp).clip(RoundedCornerShape(5.dp)).background(Atlas.BlueText)); Spacer(Modifier.width(8.dp))
                 Text(listOfNotNull(o.site.ifBlank { com.jmr.atlas.integrations.Web.host(o.url) }, o.author.takeIf { it.isNotBlank() }, o.published?.let { it.format(java.time.format.DateTimeFormatter.ofPattern("MMM yyyy")) }).joinToString(" · "),
                     style = MaterialTheme.typography.bodyMedium, color = Atlas.SecondaryText)
             }
             Spacer(Modifier.height(6.dp))
-            Text(o.title, style = MaterialTheme.typography.headlineSmall)
+            if (!embedded) Text(o.title, style = MaterialTheme.typography.headlineSmall)
             Spacer(Modifier.height(8.dp))
             FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp), itemVerticalAlignment = Alignment.CenterVertically) {
                 if (o.kind.isNotBlank()) Pill(o.kind, Icons.Outlined.Lightbulb) { vm.show(Overlay.Edit(o.id)) }
@@ -221,9 +222,9 @@ fun LinkCard(vm: AtlasViewModel, snap: Snapshot, o: KObject) {
 fun GenericCard(vm: AtlasViewModel, snap: Snapshot, o: KObject) {
     val platform = LocalPlatform.current
     val a = com.jmr.atlas.ui.theme.accent(o.type)
-    Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(horizontal = 16.dp).padding(bottom = 32.dp).testTag("generic_card")) {
+    Column(cardModifier("generic_card")) {
         CardTopBar(vm, o)
-        Row(verticalAlignment = Alignment.CenterVertically) {
+        if (!LocalEmbedded.current) Row(verticalAlignment = Alignment.CenterVertically) {
             Box(Modifier.size(48.dp).clip(RoundedCornerShape(14.dp)).background(a.container), contentAlignment = Alignment.Center) { Icon(if (o.kind == "Voice note") Icons.Outlined.Mic else com.jmr.atlas.ui.theme.icon(o.type), null, tint = a.content) }
             Spacer(Modifier.width(12.dp))
             Column {
@@ -232,8 +233,7 @@ fun GenericCard(vm: AtlasViewModel, snap: Snapshot, o: KObject) {
                 Text("${dayDate(created.toLocalDate())} · ${com.jmr.atlas.data.Briefing.time(o.created)}", style = MaterialTheme.typography.bodySmall, color = Atlas.SecondaryText)
             }
         }
-        Spacer(Modifier.height(10.dp))
-        Text(o.title, style = MaterialTheme.typography.headlineSmall)
+        if (!LocalEmbedded.current) { Spacer(Modifier.height(10.dp)); Text(o.title, style = MaterialTheme.typography.headlineSmall) }
         if (o.type == ObjType.EVENT) {
             Spacer(Modifier.height(10.dp))
             Box16 {
@@ -249,7 +249,7 @@ fun GenericCard(vm: AtlasViewModel, snap: Snapshot, o: KObject) {
         } else if (o.type != ObjType.EVENT) TextButton({ vm.show(Overlay.Edit(o.id)) }) { Text("Add details") }
         // auto-connections from capture, with the evidence
         val rels = snap.neighbours(o.id)
-        if (rels.isNotEmpty()) {
+        if (rels.isNotEmpty() && !LocalEmbedded.current) {
             Section("Connected", action = "Connect") { vm.show(Overlay.Connect(o.id)) }
             Box16 { rels.take(8).forEachIndexed { i, (n, r) -> if (i > 0) Divider16()
                 FieldRow(com.jmr.atlas.ui.theme.icon(n.type), n.title, r.label(o.id) + if (r.origin == Origin.AUTO) " · connected automatically" else if (r.review == Review.PROPOSED) " · proposed" else "", onClick = { vm.open(n.id) }) } }

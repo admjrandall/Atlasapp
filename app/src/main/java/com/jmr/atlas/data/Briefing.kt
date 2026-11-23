@@ -8,7 +8,7 @@ import java.time.ZoneId
 import java.time.format.DateTimeFormatter
 import java.time.temporal.ChronoUnit
 
-/** The Now screen and the morning notification read the same deterministic briefing. No AI, every line is sourced. */
+/** Home and the morning notification read the same deterministic briefing. No AI, every line is sourced. */
 object Briefing {
     data class Item(val task: KObject, val context: String, val late: Boolean)
     data class Data(
@@ -55,6 +55,68 @@ object Briefing {
             if (tail.isNotEmpty()) append(" " + tail.joinToString(". ") + ".")
         }
         return Data(headline, needs, waiting, todays, milestone)
+    }
+
+    // ================================================================ 0.6 Home: one sentence and one list
+    /** A run of the briefing sentence. [id] makes it tappable: an object id, or "space:<projectId>". */
+    data class Seg(val text: String, val id: String? = null)
+
+    data class Agenda(val task: KObject, val whenText: String, val late: Boolean, val waiting: Boolean, val space: KObject?)
+
+    private val EXPECT = Regex("^Expect (.+?) from (.+)$", RegexOption.IGNORE_CASE)
+
+    fun projectOf(s: Snapshot, o: KObject): KObject? = s.neighbours(o.id, false).map { it.first }.firstOrNull { it.type == ObjType.PROJECT }
+
+    /** “Two things slipped: A and B. Jamie owes you an updated estimate Wednesday. Demolition starts in 3 weeks.” Deterministic. */
+    fun sentence(s: Snapshot, today: LocalDate = LocalDate.now()): List<Seg> {
+        val open = s.ofType(ObjType.TASK).filter { !it.done }
+        val waiting = open.filter { Board.isWaiting(it) }
+        val act = open - waiting.toSet()
+        val late = act.filter { Board.effective(it)?.isBefore(today) == true }.sortedBy { Board.effective(it) }
+        val out = mutableListOf<Seg>()
+        fun t(x: String) { out += Seg(x) }
+        fun e(o: KObject, text: String = o.title) { out += Seg(text, o.id) }
+        when (late.size) {
+            0 -> {}
+            1 -> { e(late[0]); t(" is ${Board.lateBy(Board.effective(late[0])!!, today)}. ") }
+            2 -> { t("Two things slipped: "); e(late[0]); t(" and "); e(late[1]); t(". ") }
+            else -> { t("${late.size} things slipped, starting with "); e(late[0]); t(". ") }
+        }
+        val soon = act.filter { Board.effective(it)?.let { d -> !d.isBefore(today) && ChronoUnit.DAYS.between(today, d) <= 6 } == true }.minByOrNull { Board.effective(it)!! }
+        if (soon != null) { e(soon); t(" is due ${Board.whenShort(Board.effective(soon)!!, today)}. ") }
+        val w = waiting.filter { it.due == null || ChronoUnit.DAYS.between(today, it.due) <= 7 }.minByOrNull { it.due ?: LocalDate.MAX }
+        val m = w?.let { EXPECT.find(it.title) }
+        if (w != null && m != null) {
+            val who = s.neighbours(w.id, false).map { it.first }.firstOrNull { it.type == ObjType.PERSON } ?: s.ofType(ObjType.PERSON).firstOrNull { it.title.equals(m.groupValues[2].trim(), true) }
+            if (who != null) { e(who, who.firstName); t(" owes you "); e(w, articled(m.groupValues[1])); t(w.due?.let { " " + Board.whenShort(it, today) }.orEmpty() + ". ") }
+        }
+        val ms = s.ofType(ObjType.EVENT).filter { it.eventDate != null && !it.eventDate.isBefore(today) && ChronoUnit.DAYS.between(today, it.eventDate) <= 90 }.minByOrNull { it.eventDate!! }
+        if (ms != null) {
+            val n = ChronoUnit.DAYS.between(today, ms.eventDate)
+            val p = projectOf(s, ms)
+            out += Seg(ms.title, p?.let { "space:${it.id}" } ?: ms.id)
+            t(if (n == 0L) " is today." else " in ${span(n)}.")
+        }
+        if (out.isEmpty()) t("Nothing is late and nothing is due this week.")
+        return out.mapIndexed { i, sg -> if (i == out.lastIndex) sg.copy(text = sg.text.trimEnd()) else sg }
+    }
+
+    private fun articled(x: String): String { val v = x.trim(); return if (Regex("^(an?|the|his|her|their|your|my) ", RegexOption.IGNORE_CASE).containsMatchIn(v)) v else "an ${v}".replace(Regex("^an ([^aeiouAEIOU])"), "a $1") }
+
+    /** This week, once: late first, then by date; things you're waiting on show who you're waiting on. */
+    fun week(s: Snapshot, today: LocalDate = LocalDate.now()): List<Agenda> {
+        val open = s.ofType(ObjType.TASK).filter { !it.done }
+        val rows = open.mapNotNull { t ->
+            val d = Board.effective(t); val waiting = Board.isWaiting(t)
+            val include = when { d == null -> false; d.isBefore(today) -> true; else -> ChronoUnit.DAYS.between(today, d) <= 7 }
+            if (!include) return@mapNotNull null
+            val who = if (waiting) s.neighbours(t.id, false).map { it.first }.firstOrNull { it.type == ObjType.PERSON } else null
+            val late = !waiting && d!!.isBefore(today)
+            val w = when { late -> "Late · " + Board.lateBy(d!!, today).removeSuffix(" late"); else -> Board.whenShort(d!!, today).replaceFirstChar { it.uppercase() } } +
+                (if (waiting) " · waiting on ${who?.firstName ?: "someone"}" else "")
+            Agenda(t, w, late, waiting, projectOf(s, t))
+        }
+        return rows.sortedWith(compareBy({ if (it.late) 0 else 1 }, { Board.effective(it.task) }, { it.task.title }))
     }
 
     fun time(ms: Long): String = Instant.ofEpochMilli(ms).atZone(ZoneId.systemDefault()).toLocalTime().format(DateTimeFormatter.ofPattern("h:mm a"))

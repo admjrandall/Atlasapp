@@ -1,6 +1,17 @@
-# Atlas 0.5 — build ledger (Nov 22 2026)
+# Atlas 0.6 — build ledger (Nov 23 2026)
 
 Honest status. "Verified" = automated test or inspected screenshot (Robolectric). Nothing has run on a physical Fold 6 yet; items marked **device-only** can only be proven there.
+
+## 0.6 — redesign (Home · Space · item page · one input box)
+| Area | What works | Evidence |
+|---|---|---|
+| Home | One briefing sentence with tappable names (late, due soon, who owes you what, next milestone), deterministic and sourced; This week — each task once, late first, tick to complete; spaces (project covers + People, Files, Ideas & notes, Tasks, Everything); quiet Settings icon top right; "to confirm" line when Atlas has suggestions. | `SixTest.briefingSentenceIsSpecificAndSourced`, `CoverUiTest.setupThenHome`, screenshots c01, f01, f12 |
+| Space board | Bands by person (one step away), "Not tied to anyone", "Also involved"; most urgent first; status line per band; tiles per type (late/due/waiting labels, steps, document facts, photos, voice notes); tap → lines to linked tiles, others fade, dark bar with Open; selected tile scrolls into view; timeline ribbon (cover: a line of words); band rename; AI names when on. | `SixTest.bandsGroupByPersonAndPutLateFirst`, `bandNamesYouSetWinAndStick`, `FoldUiTest.homeBoardTapPage`, screenshots c04–c05, f02–f03, f13 |
+| Special spaces | People/Files/Ideas & notes by space; Tasks by Late/This week/Waiting/Later/No date/Done lately; Everything by kind. | `SixTest.specialSpaces`, screenshots f08–f09 |
+| Item page | Hero (kind, title, one line), type actions (Call/Text/Email, Mark done, Open file/link, Open the board), How it got here (origin, Atlas links with Unlink, proposals Yes/No), Connected, then every 0.5 detail section. Two columns unfolded. | `ItemPageUiTest`, screenshots c06, f04, f10, f11, i01–i03 |
+| Input box | + · text · mic · send in one row on every main screen. Sentence → Task/Note/Idea with date, space (current space wins), people — every part tappable before saving; Undo after. Questions answered from your items (rules; Gemma when on), sources listed, "Show on the board" rings them. Attach photo/scan/file/copied link. | `SixTest.sentenceParser`, `CoverUiTest.catchATaskFromASentence`, `FoldUiTest.catchAndAsk`, screenshots c02–c03, f05–f07 |
+| Removed | Universe map, Insights tab, Library, Now, Inspector, capture sheet, bottom bar/rail. Share and widget captures now report where they went in one line with Undo. | — |
+| AI additions | `Ai.answer` (numbered items only, JSON schema, sources validated) and `Ai.nameBands` (1–28 chars, letters only; else default kept). | `SixTest.aiOutputIsValidated`; inference **device-only** |
 
 ## 0.5 — what changed
 | Area | What works | Evidence |

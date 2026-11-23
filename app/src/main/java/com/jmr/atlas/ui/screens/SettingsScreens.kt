@@ -103,7 +103,7 @@ fun SettingsScreen(vm: AtlasViewModel, snap: Snapshot) {
     }
     }
     if (confirmWipe) AlertDialog({ confirmWipe = false }, title = { Text("Erase everything?") }, text = { Text("All items, connections, captures and files are permanently deleted from this phone. Phone contacts and calendar events are not touched.") },
-        confirmButton = { TextButton({ vm.repo.wipeAll(); vm.focusOn(null); vm.top(Route.Now); confirmWipe = false; vm.say("Everything erased.") }) { Text("Erase", color = Atlas.Error) } },
+        confirmButton = { TextButton({ vm.repo.wipeAll(); vm.home(); confirmWipe = false; vm.say("Everything erased.") }) { Text("Erase", color = Atlas.Error) } },
         dismissButton = { TextButton({ confirmWipe = false }) { Text("Cancel") } })
 }
 
@@ -142,7 +142,7 @@ fun IntegrationsScreen(vm: AtlasViewModel, snap: Snapshot) {
                 }
             }
             SettingsGroup("Calendars") {
-                if (!vm.sync.calendars.canRead()) SRow(Icons.Outlined.CalendarMonth, "Allow calendars", "Show today's events in Now and on people's cards; add tasks and milestones to the calendar you choose.", tag = "allow_calendar") {
+                if (!vm.sync.calendars.canRead()) SRow(Icons.Outlined.CalendarMonth, "Allow calendars", "Show today's events on Home and on people's pages; add tasks and milestones to the calendar you choose.", tag = "allow_calendar") {
                     platform.request(listOf(Manifest.permission.READ_CALENDAR, Manifest.permission.WRITE_CALENDAR)) { perm++; vm.sync.refreshCalendars() }
                 } else {
                     if (cals.isEmpty()) SRow(Icons.Outlined.CalendarMonth, "No calendars found", "Add an account in your phone's Calendar app")

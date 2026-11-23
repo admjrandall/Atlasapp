@@ -52,9 +52,10 @@ fun PersonCard(vm: AtlasViewModel, snap: Snapshot, o: KObject) {
     val myEvents = remember(events, o, snap) { vm.sync.eventsFor(o, snap) }
     val today = LocalDate.now()
 
-    Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(horizontal = 16.dp).padding(bottom = 32.dp).testTag("person_card")) {
+    Column(cardModifier("person_card")) {
         CardTopBar(vm, o)
-        Column(Modifier.fillMaxWidth(), horizontalAlignment = Alignment.CenterHorizontally) {
+        val embedded = LocalEmbedded.current
+        if (!embedded) Column(Modifier.fillMaxWidth(), horizontalAlignment = Alignment.CenterHorizontally) {
             Box {
                 PersonPhoto(o, 120.dp)
                 if (o.contactKey.isNotBlank()) Box(Modifier.align(Alignment.BottomEnd).size(34.dp).clip(CircleShape).background(Atlas.Surface).padding(3.dp).clip(CircleShape).background(Atlas.CoolMint), contentAlignment = Alignment.Center) {
@@ -76,7 +77,7 @@ fun PersonCard(vm: AtlasViewModel, snap: Snapshot, o: KObject) {
                 Text(if (vm.settings.contactsSync) "Synced with your phone contact" else "Linked to your phone contact · read-only", style = MaterialTheme.typography.labelMedium, color = Atlas.DeepTeal)
             } else TextButton({ vm.show(Overlay.AddContact(o.id)) }, Modifier.testTag("link_contact")) { Icon(Icons.Outlined.PersonAdd, null, Modifier.size(18.dp)); Spacer(Modifier.width(6.dp)); Text("Connect to a phone contact") }
         }
-        ActionRow(listOf(
+        if (!embedded) ActionRow(listOf(
             CardAction(Icons.Outlined.Call, "Call", phones.isNotEmpty()) { platform.launch(Intent(Intent.ACTION_DIAL, Uri.parse("tel:" + phones.first().value))) },
             CardAction(Icons.AutoMirrored.Outlined.Message, "Text", phones.isNotEmpty()) { platform.launch(Intent(Intent.ACTION_SENDTO, Uri.parse("smsto:" + phones.first().value))) },
             CardAction(Icons.Outlined.Email, "Email", emails.isNotEmpty()) { platform.launch(Intent(Intent.ACTION_SENDTO, Uri.parse("mailto:" + emails.first().value))) },

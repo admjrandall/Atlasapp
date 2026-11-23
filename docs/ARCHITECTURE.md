@@ -17,9 +17,12 @@ Capture ─▶ persist original (Note/Document + Capture row) ─▶ extract (on
 | `search` | Full-text + graph-neighbour retrieval. |
 | `insight` | Evidence-backed rule insights (every insight lists its sources). |
 | `ui.theme` / `ui.components` | Atlas light design system (tokens from `references/design-tokens.json`). |
-| `ui` (Root) | Adaptive shell: compact → top bar + navigation drawer + map with persistent inspector sheet + capture button; ≥600dp → rail + toolbar (Map/Insights) + map; ≥760dp adds the side inspector and the search bar. |
-| `ui.universe` | Focal knowledge map, cluster previews, refocus history, zoom/pan/fit, list alternative. |
-| `ui.screens` | People, Projects, Documents, Ideas, Tasks, Collections, Timeline, Search, Review, Capture, Settings, Onboarding. |
+| `ui` (Root) | 0.6 shell: Home → Space → item page, one input box at the bottom of all three, no tab bar or rail. `LocalWide` (≥600 dp) switches screens to two columns. |
+| `ui.six` | 0.6 screens: `Home` (briefing sentence, This week, spaces), `Space` (banded board, threads, timeline ribbon), `Tiles`, `Item` (hero, how it got here, connected, embedded details), `CatchBox` (input box, preview, answers, selection bar), `Bits`. |
+| `ui.cards` | 0.5 per-type detail sections, embedded under the item page (`LocalEmbedded`); editors and sheets. |
+| `ui.screens` | Review, Trash, History, Settings (AI, integrations, security), Onboarding. |
+| `data.Board` | Band grouping, special spaces, timeline marks, cover lines. Pure, unit-tested. |
+| `capture.Sentence` | Reads what you type into kind · title · date · space · people, or recognises a question. Pure, unit-tested. |
 
 ## Decision records
 **ADR-1 Native Kotlin + Compose + Material 3.** Per spec. Compose BOM 2026.11.01, AGP 9.5.2 with built-in Kotlin, compileSdk 37.
@@ -45,3 +48,7 @@ Contacts and calendars go through ContactsContract and CalendarContract, so ever
 
 ### ADR-9 (0.5): AI provider
 `AiMode` = ON_DEVICE | SERVER | OFF. ON_DEVICE runs Gemma 4 E2B with LiteRT-LM (the Fold 6 isn't supported by ML Kit's Gemini Nano). AI never auto-accepts: deterministic rules auto-connect known items; AI only adds proposals. SERVER (OpenAI-compatible endpoint over Tailscale) is planned.
+
+### ADR-10 (0.6): Bands, not a graph; one input box
+Research (Nov 2026) showed whole-graph views go unused and infinite canvases don't work on a phone, while the local graph — what one thing is linked to — is valued. So a project is a **board grouped into bands**: each person anchors the items linked to them (directly, or one step away); items linked to nobody share a band; people with nothing of their own share one. Bands are ordered by urgency, positions are deterministic, and connections are drawn only on tap (lines between tiles, everything else fades). Band names: your rename (`DetailKind.BAND`, origin USER) > on-device model (origin AI) > default ("With Priya").
+Creating things moves from type forms to one sentence (`Sentence.parse`), shown back as tappable parts before saving. Questions go to the same box: Atlas's own rules answer (milestone risk, late, due, waiting, else search) and, with on-device AI on, Gemma writes the answer from numbered items only; either way the sources are listed and can be ringed on the board.

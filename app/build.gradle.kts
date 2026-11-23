@@ -19,8 +19,8 @@ android {
         applicationId = "com.jmr.atlas"
         minSdk = 26
         targetSdk = 37
-        versionCode = 3
-        versionName = "0.5.0"
+        versionCode = 4
+        versionName = "0.6.0"
         ndk { abiFilters += listOf("arm64-v8a") }
     }
 

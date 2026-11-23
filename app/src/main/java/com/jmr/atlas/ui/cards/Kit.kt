@@ -6,6 +6,7 @@ import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -50,19 +51,28 @@ val LocalInPane = staticCompositionLocalOf { false }
 
 /** Shared building blocks for the per-type item cards (design I01–I15): card → actions → why now → type details → collapsed. */
 
+/** True when a card's body is shown inside the 0.6 item page, which draws its own header, actions and connections. */
+val LocalEmbedded = androidx.compose.runtime.compositionLocalOf { false }
+
+/** Outer modifier of a card: scrolling page on its own, plain column when embedded in the item page. */
+@Composable
+fun cardModifier(tag: String, horizontal: Int = 16): Modifier =
+    if (LocalEmbedded.current) Modifier.fillMaxWidth().testTag(tag)
+    else Modifier.fillMaxSize().verticalScroll(androidx.compose.foundation.rememberScrollState()).padding(horizontal = horizontal.dp).padding(bottom = 32.dp).testTag(tag)
+
 @Composable
 fun CardTopBar(vm: AtlasViewModel, o: KObject, overImage: Boolean = false, extra: @Composable RowScope.() -> Unit = {}) {
+    if (LocalEmbedded.current) return
     var menu by remember { mutableStateOf(false) }
     val bg = if (overImage) Atlas.Surface.copy(alpha = 0.92f) else Color.Transparent
     Row(Modifier.fillMaxWidth().padding(horizontal = 4.dp, vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
-        if (vm.canGoBack() && !LocalInPane.current) IconButton({ vm.back() }, Modifier.clip(CircleShape).background(bg).semantics { contentDescription = "Back" }.testTag("back")) { Icon(Icons.AutoMirrored.Outlined.ArrowBack, null, tint = Atlas.DeepPlum) }
+        if (vm.stack.value.size > 1 && !LocalInPane.current) IconButton({ vm.back() }, Modifier.clip(CircleShape).background(bg).semantics { contentDescription = "Back" }.testTag("back")) { Icon(Icons.AutoMirrored.Outlined.ArrowBack, null, tint = Atlas.DeepPlum) }
         Spacer(Modifier.weight(1f))
         extra()
         IconButton({ vm.show(Overlay.Edit(o.id)) }, Modifier.clip(CircleShape).background(bg).semantics { contentDescription = "Edit" }.testTag("edit")) { Icon(Icons.Outlined.Edit, null, tint = Atlas.DeepPlum) }
         Box {
             IconButton({ menu = true }, Modifier.clip(CircleShape).background(bg).semantics { contentDescription = "More" }) { Icon(Icons.Outlined.MoreVert, null, tint = Atlas.DeepPlum) }
             DropdownMenu(menu, { menu = false }) {
-                DropdownMenuItem({ Text("Show on map") }, { menu = false; vm.focusOn(o.id) }, leadingIcon = { Icon(Icons.Outlined.Hub, null) })
                 DropdownMenuItem({ Text("Connect to…") }, { menu = false; vm.show(Overlay.Connect(o.id)) }, leadingIcon = { Icon(Icons.Outlined.AddLink, null) })
                 DropdownMenuItem({ Text("Add a field") }, { menu = false; vm.show(Overlay.AddField(o.id)) }, leadingIcon = { Icon(Icons.Outlined.PlaylistAdd, null) })
                 DropdownMenuItem({ Text(if (o.pinned) "Unpin" else "Pin") }, { menu = false; vm.repo.update(o.copy(pinned = !o.pinned), if (o.pinned) "Unpinned" else "Pinned") }, leadingIcon = { Icon(Icons.Outlined.PushPin, null) })
@@ -139,10 +149,11 @@ fun NavRow(icon: ImageVector, title: String, sub: String, onClick: () -> Unit) {
 /** The two collapsed rows every card ends with: connections and history. */
 @Composable
 fun CollapsedFooter(vm: AtlasViewModel, snap: Snapshot, o: KObject) {
+    if (LocalEmbedded.current) return
     val nb = snap.neighbours(o.id)
     if (nb.isNotEmpty()) {
         val counts = nb.groupBy { it.first.type }.entries.sortedByDescending { it.value.size }.joinToString(" · ") { (t, l) -> plural(l.size, t.label.lowercase(), t.plural.lowercase()) }
-        NavRow(Icons.Outlined.Hub, "All connections", counts) { vm.go(Route.Connections(o.id)) }
+        NavRow(Icons.Outlined.Hub, "All connections", counts) { vm.go(Route.Item(o.id)) }
     }
     val hist = snap.activityOf(o.id)
     val created = java.time.Instant.ofEpochMilli(o.created).atZone(java.time.ZoneId.systemDefault()).toLocalDate()
@@ -152,6 +163,7 @@ fun CollapsedFooter(vm: AtlasViewModel, snap: Snapshot, o: KObject) {
 /** Connected items as type-coloured chips (documents, links). */
 @Composable
 fun ConnectedChips(vm: AtlasViewModel, snap: Snapshot, o: KObject) {
+    if (LocalEmbedded.current) return
     val nb = snap.neighbours(o.id).map { it.first }
     Section("Connected", action = "Connect") { vm.show(Overlay.Connect(o.id)) }
     if (nb.isEmpty()) { Text("Not connected to anything yet.", style = MaterialTheme.typography.bodyMedium, color = Atlas.SecondaryText); return }
@@ -191,6 +203,7 @@ fun PersonPhoto(o: KObject, size: Dp, modifier: Modifier = Modifier) {
 /** “Why this matters now” — deterministic lines, each tied to the item it came from; open tasks can be ticked in place. */
 @Composable
 fun WhyNowBox(vm: AtlasViewModel, snap: Snapshot, o: KObject, extra: List<Pair<ImageVector, String>> = emptyList(), skip: (String) -> Boolean = { false }) {
+    if (LocalEmbedded.current) return
     val lines = vm.repo.context(o.id).filterNot { skip(it.text) }
     if (lines.isEmpty() && extra.isEmpty()) return
     Surface(Modifier.fillMaxWidth().padding(top = 12.dp).testTag("why_now"), shape = RoundedCornerShape(22.dp), color = Atlas.SurfaceSecondary) {

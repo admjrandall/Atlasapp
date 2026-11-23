@@ -65,11 +65,11 @@ fun ProjectCard(vm: AtlasViewModel, snap: Snapshot, o: KObject) {
     val left = milestones.count { !it.eventDate!!.isBefore(today) }
     val updates = snap.detailsOf(o.id, DetailKind.UPDATE).sortedByDescending { it.created }
 
-    Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(bottom = 32.dp).testTag("project_card")) {
-        Box { CoverBand(o.id.hashCode()); CardTopBar(vm, o, overImage = true) }
-        Column(Modifier.padding(horizontal = 16.dp)) {
-            Spacer(Modifier.height(12.dp))
-            Text(o.title, style = MaterialTheme.typography.headlineMedium)
+    Column(cardModifier("project_card", 0)) {
+        val embedded = LocalEmbedded.current
+        if (!embedded) Box { CoverBand(o.id.hashCode()); CardTopBar(vm, o, overImage = true) }
+        Column(Modifier.padding(horizontal = if (embedded) 0.dp else 16.dp)) {
+            if (!embedded) { Spacer(Modifier.height(12.dp)); Text(o.title, style = MaterialTheme.typography.headlineMedium) }
             Spacer(Modifier.height(8.dp))
             FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp), itemVerticalAlignment = Alignment.CenterVertically) {
                 o.projectStatus?.let { Pill(it.label) }
@@ -127,7 +127,7 @@ fun ProjectCard(vm: AtlasViewModel, snap: Snapshot, o: KObject) {
             Section("Next up", action = "Add task") { vm.show(Overlay.Create(ObjType.TASK, o.id)) }
             if (open.isEmpty()) Text("No open tasks. What's the next step?", style = MaterialTheme.typography.bodyMedium, color = Atlas.SecondaryText)
             open.take(5).forEach { t -> TaskLine(vm, snap, t) }
-            if (open.size > 5) TextButton({ vm.go(com.jmr.atlas.ui.Route.Connections(o.id)) }) { Text("All ${open.size} open tasks") }
+            if (open.size > 5) TextButton({ vm.go(com.jmr.atlas.ui.Route.Space("tasks")) }) { Text("All ${open.size} open tasks") }
 
             // ---- people
             val people = nb.filter { it.type == ObjType.PERSON }
