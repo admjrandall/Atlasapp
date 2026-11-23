@@ -23,6 +23,7 @@ class CaptureTest {
 
     @Before fun setUp() {
         repo = Repository(ApplicationProvider.getApplicationContext(), null)
+        repo.settings.autoConnect = false   // these tests check the review flow; auto-connect has its own test
         home = repo.create(KObject(type = ObjType.PROJECT, title = "Home Renovation", body = "Kitchen, living room and hallway.", projectStatus = ProjectStatus.ACTIVE))
     }
 

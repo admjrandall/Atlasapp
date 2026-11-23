@@ -35,3 +35,13 @@ Capture ─▶ persist original (Note/Document + Capture row) ─▶ extract (on
 **ADR-6 One record, many relationships.** A document linked to three projects is one row plus three `relationships` rows. Proposed (unreviewed) relationships are stored with `review=PROPOSED` and drawn dashed; they are never treated as facts.
 
 **ADR-7 No placeholder controls.** Canvas is not shown until it works (Phase 5). Every visible button has a tested purpose.
+
+
+### ADR-7 (0.5): SupportSQLite + SQLCipher
+AtlasDb talks to `SupportSQLiteDatabase`. Devices use `net.zetetic:sqlcipher-android` (SupportOpenHelperFactory); unit tests use the framework helper, so the same SQL is tested. Schema v2 adds per-type columns, `details` (repeatable fields: phones, facts, steps, updates, highlights, custom values) and `field_defs` (type-wide custom fields). Migrations are additive.
+
+### ADR-8 (0.5): Integrations through the phone, not accounts
+Contacts and calendars go through ContactsContract and CalendarContract, so every account the phone already syncs works without OAuth or a server. Gmail is share-in only. Link previews use HTTPS fetches with hard limits.
+
+### ADR-9 (0.5): AI provider
+`AiMode` = ON_DEVICE | SERVER | OFF. ON_DEVICE runs Gemma 4 E2B with LiteRT-LM (the Fold 6 isn't supported by ML Kit's Gemini Nano). AI never auto-accepts: deterministic rules auto-connect known items; AI only adds proposals. SERVER (OpenAI-compatible endpoint over Tailscale) is planned.

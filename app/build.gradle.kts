@@ -19,8 +19,8 @@ android {
         applicationId = "com.jmr.atlas"
         minSdk = 26
         targetSdk = 37
-        versionCode = 2
-        versionName = "0.4.0"
+        versionCode = 3
+        versionName = "0.5.0"
         ndk { abiFilters += listOf("arm64-v8a") }
     }
 
@@ -61,6 +61,16 @@ dependencies {
     implementation("androidx.activity:activity-compose:1.13.0")
     implementation("androidx.lifecycle:lifecycle-viewmodel-compose:2.11.1")
     implementation("androidx.lifecycle:lifecycle-runtime-compose:2.11.1")
+    // Encrypted database (SQLCipher) behind the androidx SupportSQLite interface; tests use the framework helper
+    implementation("net.zetetic:sqlcipher-android:4.20.0@aar")
+    implementation("androidx.sqlite:sqlite:2.7.1")
+    implementation("androidx.sqlite:sqlite-framework:2.7.1")
+    // On-device language model runtime (Gemma 4 E2B, downloaded on request)
+    implementation("com.google.ai.edge.litertlm:litertlm-android:0.19.1")
+    // Home-screen quick-capture widget and the morning briefing / reminders
+    implementation("androidx.glance:glance-appwidget:1.2.0")
+    implementation("androidx.glance:glance-material3:1.2.0")
+    implementation("androidx.work:work-runtime-ktx:2.12.0")
     // On-device OCR (bundled Latin model) and Google's document scanner
     implementation("com.google.mlkit:text-recognition:16.0.1")
     implementation("com.google.android.gms:play-services-mlkit-document-scanner:16.0.0")

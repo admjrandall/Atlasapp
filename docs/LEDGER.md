@@ -1,4 +1,37 @@
-# Atlas 0.4 — build ledger (Nov 22 2026)
+# Atlas 0.5 — build ledger (Nov 22 2026)
+
+Honest status. "Verified" = automated test or inspected screenshot (Robolectric). Nothing has run on a physical Fold 6 yet; items marked **device-only** can only be proven there.
+
+## 0.5 — what changed
+| Area | What works | Evidence |
+|---|---|---|
+| Home | Now: greeting, deterministic briefing headline, Needs you (overdue + due/deadline today, tick to complete with Undo), Waiting on, today's calendar, Just captured with automatic connections + Undo. | `PhoneUiTest.setupThenNow`, `IntegrationTest.briefingAndSchedule` |
+| Navigation | Now · Universe · Capture · Search · Library on the phone bar and the Fold rail. Library list → card side pane on the Fold. | UI tests, screenshots |
+| Setup | Welcome → locked to this phone (encrypted, fingerprint) → briefing time + notifications → contacts/calendars (optional) → example or empty. | `PhoneUiTest` |
+| Item cards | Person, Project, Task, Document/Image, Link, generic (note/idea/event/decision/collection). Card → actions → why now → type details → connections/history collapsed. | `CardUiTest`, screenshots i01–i12 |
+| Editing | Full-screen editors per type: person (repeatable phones/emails/addresses/dates/social with labels, nickname, photo), project, task (plan vs deadline, priority, blocked), document (kind, document date, key facts), link (kind). Custom fields: 10 types, per item or per type, secret masking. | `IntegrationTest.customFieldsPerItemAndPerType` |
+| Tasks | Plan date vs deadline, reminder (notification with Done / Snooze / voice reply, mirrored to a paired watch), repeat (rolls forward on complete), steps checklist, block time in calendar. | `IntegrationTest.repeatingTaskRollsForward`; alarms **device-only** |
+| Projects | Health (On track/At risk/Off track) via posted updates, progress, next milestone, people & roles, documents, decisions. | `IntegrationTest.projectUpdatesCarryHealth`, `CardUiTest` |
+| Documents | Key facts read on the phone (total, valid-until/due, reference no., document date, kind); page-1 preview; summarize on the phone when AI is on. | `IntegrationTest.documentFacts` |
+| Auto-connect | Known people/projects connect at once (Origin AUTO, logged, Undo); anything new waits in To review. Setting to turn off. | `IntegrationTest.autoConnectKnownItemsWithUndo` |
+| Contacts | Search phone contacts; add/connect with photo and all fields; two-way sync when enabled (writes back; new people saved to the chosen account); phone wins when it changes; deleted contacts unlink, never delete. | **device-only** (Robolectric has no contacts provider) |
+| Calendars | Choose calendars; next 14 days in Now, person/project cards and search; insert events into the chosen calendar, or open the calendar app prefilled without permission. | **device-only** |
+| Internet | Link previews (title, description, site, author, date, image, readable copy) over HTTPS only, 2 MB/3 MB caps, 5 redirects, private/loopback/link-local/CGNAT addresses refused; copies Wi-Fi only by default. | `IntegrationTest.pagesAreParsedAsPlainText`, `DataTest.networkIsHttpsOnlyAndNeverPrivate` |
+| Share | Gmail/Chrome/any app → Atlas: subject becomes the title, a lone URL becomes a Link with preview, source app recorded. | code; **device-only** end to end |
+| Widget | One Glance widget: type, voice, scan, paste copied link. | **device-only** |
+| Briefing | Notification at the chosen time (inexact 15-min window, weekdays option), rescheduled on boot. | `IntegrationTest.briefingAndSchedule`; delivery **device-only** |
+| AI | Settings shows On this phone / My server (coming later) / Off. On-device: Gemma 4 E2B (.litertlm, 2,588,147,712 bytes) downloaded on request, pinned to HF commit 2e12bfd8…, SHA-256 verified; LiteRT-LM 0.19.1 GPU→CPU fallback; JSON-schema output; results validated and only ever proposals. | `IntegrationTest.aiOutputIsValidatedNotTrusted`; inference **device-only** |
+| Encryption | Database encrypted with SQLCipher 4.20 (passphrase random, wrapped by Keystore, no-backup storage); 0.4 plain DB converted once via sqlcipher_export. Fingerprint/screen-lock unlock with lock-after delay; blank recents card. | migration of schema `IntegrationTest.v1DatabaseMigratesAndKeepsData`; SQLCipher itself **device-only** |
+
+## Known limits
+- Exact alarms aren't used (no special permission): reminders can arrive up to 5 minutes late, the briefing up to 15.
+- Gemma 4 E2B on the Fold 6 (Snapdragon 8 Gen 3) is unbenchmarked; expect several seconds per capture.
+- "My server" (Ollama over Tailscale) is listed, not built.
+- Gmail is share-only by design (read sync needs a full-mailbox credential).
+- Single light theme.
+
+
+## Earlier (0.4)
 
 ## 0.4 changes (UI review pass)
 - Phone map shows real content (faces, documents, checkable tasks, ideas, projects, milestones) instead of count tiles; same neighbourhood layout as the Fold.

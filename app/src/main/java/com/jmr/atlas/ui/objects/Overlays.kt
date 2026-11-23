@@ -29,25 +29,49 @@ import java.time.ZoneOffset
 @Composable
 fun Overlays(vm: AtlasViewModel, snap: Snapshot) {
     val ov by vm.overlay.collectAsState()
+    fun obj(id: String, f: @Composable (KObject) -> Unit): @Composable () -> Unit = { snap.objects[id]?.let { f(it) } ?: vm.show(null) }
     when (val o = ov) {
         null -> {}
-        is Overlay.Edit -> snap.objects[o.id]?.let { EditSheet(vm, snap, it, null, null) } ?: vm.show(null)
-        is Overlay.Create -> EditSheet(vm, snap, null, o.type, o.linkTo, o.title)
-        is Overlay.Connect -> snap.objects[o.id]?.let { ConnectDialog(vm, snap, it, o.types) } ?: vm.show(null)
+        is Overlay.Edit -> obj(o.id) { com.jmr.atlas.ui.cards.EditorScreen(vm, snap, it, null, null) }()
+        is Overlay.Create -> com.jmr.atlas.ui.cards.EditorScreen(vm, snap, null, o.type, o.linkTo, o.title)
+        is Overlay.Connect -> obj(o.id) { ConnectDialog(vm, snap, it, o.types) }()
         is Overlay.Cluster -> ClusterSheet(vm, snap, o)
         Overlay.FocusPicker -> FocusPicker(vm, snap)
         Overlay.Capture -> CaptureSheet(vm, snap)
+        is Overlay.AddField -> obj(o.id) { com.jmr.atlas.ui.cards.AddFieldSheet(vm, it) }()
+        is Overlay.PostUpdate -> obj(o.id) { com.jmr.atlas.ui.cards.PostUpdateSheet(vm, it) }()
+        is Overlay.AddLine -> obj(o.id) { com.jmr.atlas.ui.cards.AddLineSheet(vm, it, o.kind) }()
+        is Overlay.TaskDates -> obj(o.id) { com.jmr.atlas.ui.cards.TaskDatesSheet(vm, it) }()
+        is Overlay.Block -> obj(o.id) { com.jmr.atlas.ui.cards.BlockSheet(vm, it) }()
+        is Overlay.AddContact -> com.jmr.atlas.ui.cards.AddContactSheet(vm, o.linkTo)
+        Overlay.BriefingTime -> BriefingTimeDialog(vm)
         Overlay.RemoveExample -> AlertDialog({ vm.show(null) }, title = { Text("Remove the example workspace?") },
             text = { Text("Deletes the ${snap.objects.values.count { it.origin == Origin.EXAMPLE }} example items. Anything you added stays.") },
-            confirmButton = { TextButton({ vm.repo.clearExample(); vm.focusOn(null); vm.show(null); vm.say("Example removed.") }) { Text("Remove") } },
+            confirmButton = { TextButton({ vm.repo.clearExample(); vm.focusOn(null); vm.top(Route.Now); vm.show(null); vm.say("Example removed.") }) { Text("Remove") } },
             dismissButton = { TextButton({ vm.show(null) }) { Text("Keep") } })
-        is Overlay.ConfirmPurge -> snap.objects[o.id]?.let { obj ->
-            AlertDialog({ vm.show(null) }, title = { Text("Delete “${obj.title}” forever?") },
-                text = { Text("Its connections and activity are removed${if (obj.vaultFile.isNotBlank()) ", and the encrypted original is erased" else ""}. This can't be undone.") },
-                confirmButton = { TextButton({ vm.repo.purge(obj.id); vm.show(null); vm.say("Deleted.") }) { Text("Delete forever", color = Atlas.Error) } },
+        is Overlay.ConfirmPurge -> obj(o.id) { item ->
+            AlertDialog({ vm.show(null) }, title = { Text("Delete “${item.title}” forever?") },
+                text = { Text("Its connections and activity are removed${if (item.vaultFile.isNotBlank()) ", and the encrypted original is erased" else ""}. This can't be undone.") },
+                confirmButton = { TextButton({ vm.repo.purge(item.id); vm.show(null); vm.say("Deleted.") }) { Text("Delete forever", color = Atlas.Error) } },
                 dismissButton = { TextButton({ vm.show(null) }) { Text("Cancel") } })
-        } ?: vm.show(null)
+        }()
     }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun BriefingTimeDialog(vm: AtlasViewModel) {
+    val s = vm.settings
+    val st = rememberTimePickerState(s.briefingMinutes / 60, s.briefingMinutes % 60, false)
+    var on by remember { mutableStateOf(s.briefingOn) }
+    var weekdays by remember { mutableStateOf(s.briefingWeekdaysOnly) }
+    AlertDialog({ vm.show(null) }, title = { Text("Morning briefing") }, text = {
+        Column {
+            Row(verticalAlignment = Alignment.CenterVertically) { Text("Briefing", Modifier.weight(1f)); Switch(on, { on = it }) }
+            if (on) { TimePicker(st); Row(verticalAlignment = Alignment.CenterVertically) { Text("Weekends too", Modifier.weight(1f)); Switch(!weekdays, { weekdays = !it }) } }
+        }
+    }, confirmButton = { TextButton({ s.briefingOn = on; s.briefingMinutes = st.hour * 60 + st.minute; s.briefingWeekdaysOnly = weekdays; vm.show(null) }) { Text("Save") } },
+        dismissButton = { TextButton({ vm.show(null) }) { Text("Cancel") } })
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -55,107 +79,6 @@ fun Overlays(vm: AtlasViewModel, snap: Snapshot) {
 fun CaptureSheet(vm: AtlasViewModel, snap: Snapshot) {
     ModalBottomSheet({ vm.show(null); vm.lastCapture.value = null }, containerColor = Atlas.Surface, sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)) {
         com.jmr.atlas.ui.screens.CaptureContent(vm, snap)
-    }
-}
-
-private val CREATABLE = listOf(ObjType.NOTE, ObjType.TASK, ObjType.PROJECT, ObjType.PERSON, ObjType.IDEA, ObjType.LINK, ObjType.EVENT, ObjType.COLLECTION, ObjType.DECISION)
-
-@OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
-@Composable
-fun EditSheet(vm: AtlasViewModel, snap: Snapshot, existing: KObject?, newType: ObjType?, linkTo: String?, initialTitle: String = "") {
-    var type by remember { mutableStateOf(existing?.type ?: newType ?: ObjType.NOTE) }
-    var title by remember { mutableStateOf(existing?.title ?: initialTitle) }
-    var body by remember { mutableStateOf(existing?.body.orEmpty()) }
-    var role by remember { mutableStateOf(existing?.role.orEmpty()) }
-    var org by remember { mutableStateOf(existing?.org.orEmpty()) }
-    var email by remember { mutableStateOf(existing?.email.orEmpty()) }
-    var phone by remember { mutableStateOf(existing?.phone.orEmpty()) }
-    var url by remember { mutableStateOf(existing?.url.orEmpty()) }
-    var status by remember { mutableStateOf(existing?.projectStatus ?: ProjectStatus.ACTIVE) }
-    var due by remember { mutableStateOf(existing?.due) }
-    var target by remember { mutableStateOf(existing?.targetDate) }
-    var eventDate by remember { mutableStateOf(existing?.eventDate) }
-    var priority by remember { mutableStateOf(existing?.priority ?: Priority.NONE) }
-    var blocked by remember { mutableStateOf(existing?.blocked ?: false) }
-    var picking by remember { mutableStateOf<String?>(null) }
-    val linkObj = linkTo?.let { snap.objects[it] }
-
-    ModalBottomSheet({ vm.show(null) }, containerColor = Atlas.Surface, modifier = Modifier.testTag("edit_sheet")) {
-        Column(Modifier.verticalScroll(rememberScrollState()).padding(horizontal = 20.dp).padding(bottom = 32.dp)) {
-            Text(if (existing == null) "New ${type.label.lowercase()}" else "Edit ${type.label.lowercase()}", style = MaterialTheme.typography.titleLarge)
-            if (linkObj != null) Text("Connected to ${linkObj.title}", style = MaterialTheme.typography.bodySmall, color = Atlas.SecondaryText)
-            if (existing == null && newType == null) FlowRow(Modifier.padding(top = 12.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                CREATABLE.forEach { t -> FilterChip(type == t, { type = t }, { Text(t.label) }, leadingIcon = { Icon(icon(t), null, Modifier.size(18.dp)) }) }
-            }
-            Spacer(Modifier.height(12.dp))
-            OutlinedTextField(title, { title = it }, Modifier.fillMaxWidth().testTag("field_title"), label = { Text(if (type == ObjType.PERSON) "Name" else "Title") }, singleLine = true,
-                keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.Sentences))
-            when (type) {
-                ObjType.PERSON -> {
-                    OutlinedTextField(role, { role = it }, Modifier.fillMaxWidth().padding(top = 8.dp), label = { Text("Role") }, singleLine = true)
-                    OutlinedTextField(org, { org = it }, Modifier.fillMaxWidth().padding(top = 8.dp), label = { Text("Organization") }, singleLine = true)
-                    OutlinedTextField(email, { email = it }, Modifier.fillMaxWidth().padding(top = 8.dp), label = { Text("Email") }, singleLine = true)
-                    OutlinedTextField(phone, { phone = it }, Modifier.fillMaxWidth().padding(top = 8.dp), label = { Text("Phone") }, singleLine = true)
-                }
-                ObjType.PROJECT -> {
-                    Text("Status", style = MaterialTheme.typography.labelLarge, modifier = Modifier.padding(top = 12.dp))
-                    FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) { ProjectStatus.entries.forEach { s -> FilterChip(status == s, { status = s }, { Text(s.label) }) } }
-                    DateRow("Target date", target, { picking = "target" }) { target = null }
-                }
-                ObjType.TASK -> {
-                    DateRow("Due", due, { picking = "due" }) { due = null }
-                    Text("Priority", style = MaterialTheme.typography.labelLarge, modifier = Modifier.padding(top = 12.dp))
-                    FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) { Priority.entries.forEach { p -> FilterChip(priority == p, { priority = p }, { Text(p.label) }) } }
-                    Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(top = 8.dp)) { Switch(blocked, { blocked = it }); Spacer(Modifier.width(12.dp)); Text("Blocked") }
-                }
-                ObjType.EVENT -> DateRow("Date", eventDate, { picking = "event" }) { eventDate = null }
-                ObjType.LINK -> OutlinedTextField(url, { url = it }, Modifier.fillMaxWidth().padding(top = 8.dp), label = { Text("Address (https://…)") }, singleLine = true)
-                else -> {}
-            }
-            OutlinedTextField(body, { body = it }, Modifier.fillMaxWidth().padding(top = 8.dp).heightIn(min = 120.dp), label = { Text(if (type == ObjType.NOTE) "Note" else "Description") },
-                keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.Sentences))
-            Row(Modifier.fillMaxWidth().padding(top = 16.dp), horizontalArrangement = Arrangement.End) {
-                TextButton({ vm.show(null) }) { Text("Cancel") }
-                Spacer(Modifier.width(8.dp))
-                Button({
-                    val t = title.trim().ifEmpty { if (type == ObjType.NOTE && body.isNotBlank()) com.jmr.atlas.data.Repository.titleFrom(body) else "" }
-                    if (t.isEmpty()) { vm.say("Give it a title."); return@Button }
-                    val cleanUrl = url.trim().takeIf { it.isEmpty() || it.startsWith("https://") || it.startsWith("http://") } ?: "https://${url.trim()}"
-                    val base = existing ?: KObject(type = type, title = t)
-                    val obj = base.copy(type = type, title = t, body = body.trim(), role = role.trim(), org = org.trim(), email = email.trim(), phone = phone.trim(), url = cleanUrl,
-                        projectStatus = if (type == ObjType.PROJECT) status else base.projectStatus, due = if (type == ObjType.TASK) due else base.due,
-                        targetDate = if (type == ObjType.PROJECT) target else base.targetDate, eventDate = if (type == ObjType.EVENT) eventDate else base.eventDate,
-                        priority = priority, blocked = blocked)
-                    if (existing == null) {
-                        val rel = when { linkObj == null -> null; type == ObjType.TASK && linkObj.type == ObjType.PERSON -> RelType.RELATED_TO
-                            type in setOf(ObjType.TASK, ObjType.EVENT, ObjType.NOTE, ObjType.DOCUMENT, ObjType.IDEA) && linkObj.type in setOf(ObjType.PROJECT, ObjType.COLLECTION) -> RelType.BELONGS_TO
-                            type == ObjType.PROJECT && linkObj.type == ObjType.COLLECTION -> RelType.PART_OF; else -> RelType.RELATED_TO }
-                        vm.repo.create(obj, listOfNotNull(rel?.let { linkObj!!.id to it }))
-                        vm.say("${type.label} created.")
-                    } else vm.repo.update(obj)
-                    vm.show(null)
-                }, Modifier.testTag("save")) { Text("Save") }
-            }
-        }
-    }
-    picking?.let { which ->
-        val initial = when (which) { "due" -> due; "target" -> target; else -> eventDate } ?: LocalDate.now()
-        val st = rememberDatePickerState(initialSelectedDateMillis = initial.atStartOfDay(ZoneOffset.UTC).toInstant().toEpochMilli())
-        DatePickerDialog({ picking = null }, confirmButton = {
-            TextButton({
-                st.selectedDateMillis?.let { ms -> val d = Instant.ofEpochMilli(ms).atZone(ZoneOffset.UTC).toLocalDate(); when (which) { "due" -> due = d; "target" -> target = d; else -> eventDate = d } }
-                picking = null
-            }) { Text("Set") }
-        }, dismissButton = { TextButton({ picking = null }) { Text("Cancel") } }) { DatePicker(st) }
-    }
-}
-
-@Composable
-private fun DateRow(label: String, d: LocalDate?, pick: () -> Unit, clear: () -> Unit) {
-    Row(Modifier.padding(top = 12.dp), verticalAlignment = Alignment.CenterVertically) {
-        Text(label, style = MaterialTheme.typography.labelLarge, modifier = Modifier.width(100.dp))
-        AssistChip(pick, { Text(d?.let { relDate(it) + " · " + it } ?: "Set date") }, leadingIcon = { Icon(Icons.Outlined.Event, null) })
-        if (d != null) TextButton(clear) { Text("Clear") }
     }
 }
 

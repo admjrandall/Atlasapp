@@ -13,7 +13,7 @@ import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.ArrowBack
-import androidx.compose.material.icons.automirrored.outlined.ViewList
+import androidx.compose.material.icons.automirrored.outlined.Undo
 import androidx.compose.material.icons.outlined.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -38,6 +38,8 @@ import com.jmr.atlas.model.*
 import com.jmr.atlas.ui.*
 import com.jmr.atlas.ui.components.*
 import com.jmr.atlas.ui.objects.Segmented
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import com.jmr.atlas.ui.theme.Atlas
 import com.jmr.atlas.ui.theme.icon
 import java.time.LocalDate
@@ -51,53 +53,52 @@ fun PageHeader(title: String, vm: AtlasViewModel, showBack: Boolean = true, acti
     }
 }
 
-// ================================================================ capture (a sheet over whatever you were doing)
+// ================================================================ capture (design C09: a sheet over whatever you were doing)
 @Composable
 fun CaptureContent(vm: AtlasViewModel, snap: Snapshot) {
     val platform = LocalPlatform.current
     var text by rememberSaveable { mutableStateOf("") }
     val busy by vm.busy.collectAsState()
+    val aiBusy by vm.aiBusy.collectAsState()
     val last by vm.lastCapture.collectAsState()
     var more by remember { mutableStateOf(false) }
+    val fr = remember { FocusRequester() }
+    LaunchedEffect(Unit) { if (last == null) runCatching { fr.requestFocus() } }
     Column(Modifier.fillMaxWidth().verticalScroll(rememberScrollState()).padding(horizontal = 20.dp).padding(bottom = 24.dp).testTag("capture")) {
-        Text("Capture", style = MaterialTheme.typography.titleLarge, modifier = Modifier.semantics { heading() })
-        Spacer(Modifier.height(10.dp))
-        OutlinedTextField(text, { text = it }, Modifier.fillMaxWidth().heightIn(min = 120.dp).testTag("capture_field"),
+        Text("Capture", style = MaterialTheme.typography.headlineSmall, modifier = Modifier.semantics { heading() })
+        Spacer(Modifier.height(12.dp))
+        OutlinedTextField(text, { text = it }, Modifier.fillMaxWidth().heightIn(min = 128.dp).focusRequester(fr).testTag("capture_field"),
             placeholder = { Text("What happened, what you decided, what to remember…") },
-            shape = RoundedCornerShape(20.dp), keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.Sentences))
-        Row(Modifier.fillMaxWidth().padding(top = 8.dp), verticalAlignment = Alignment.CenterVertically) {
-            SourceButton(Icons.Outlined.Image, "Photo") { platform.pickImage() }
-            SourceButton(Icons.Outlined.DocumentScanner, "Scan") { platform.scan() }
-            SourceButton(Icons.Outlined.AttachFile, "File") { platform.pickFile() }
+            shape = RoundedCornerShape(22.dp), keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.Sentences),
+            colors = OutlinedTextFieldDefaults.colors(focusedBorderColor = Atlas.Primary, unfocusedBorderColor = Atlas.Primary.copy(alpha = 0.6f)))
+        Row(Modifier.fillMaxWidth().padding(top = 12.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+            RoundSource(Icons.Outlined.Mic, "Voice note") { platform.dictate { t -> vm.captureText(t, voice = true) } }
+            RoundSource(Icons.Outlined.PhotoCamera, "Scan or photo") { platform.scan() }
+            RoundSource(Icons.Outlined.Description, "File") { platform.pickFile() }
+            RoundSource(Icons.Outlined.Link, "Paste copied link") { platform.clipboardUrl()?.let { vm.captureLink(it) } ?: vm.say("No link on the clipboard.") }
             Spacer(Modifier.weight(1f))
-            Button({ vm.captureText(text); text = "" }, enabled = text.isNotBlank() && busy == null, modifier = Modifier.testTag("capture_save")) { Text("Save") }
+            Button({ vm.captureText(text); text = "" }, enabled = text.isNotBlank() && busy == null, modifier = Modifier.heightIn(min = 52.dp).testTag("capture_save"),
+                colors = ButtonDefaults.buttonColors(containerColor = Atlas.Primary)) { Text("Save", style = MaterialTheme.typography.titleSmall) }
         }
-        if (busy != null) Row(Modifier.padding(top = 16.dp), verticalAlignment = Alignment.CenterVertically) {
+        if (busy != null || aiBusy != null) Row(Modifier.padding(top = 16.dp), verticalAlignment = Alignment.CenterVertically) {
             CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp); Spacer(Modifier.width(10.dp))
-            Text("Saved. Looking for connections…", style = MaterialTheme.typography.bodyMedium)
+            Text(if (aiBusy != null) "Saved. Reading it with the on-device model…" else "Saved. Looking for connections…", style = MaterialTheme.typography.bodyMedium)
         }
         val lastCap = last?.let { id -> snap.captures.firstOrNull { it.id == id } }
-        if (lastCap != null && busy == null) {
-            val pend = snap.pending().filter { it.captureId == lastCap.id }
-            if (pend.isEmpty()) Text(when (lastCap.status) { CaptureStatus.CONNECTED -> "Saved and connected."; CaptureStatus.FAILED -> "Saved. Reading it failed — the original is kept."; else -> "Saved. Nothing to connect." },
-                style = MaterialTheme.typography.bodyMedium, color = Atlas.SecondaryText, modifier = Modifier.padding(top = 16.dp))
-            else {
-                SectionLabel("Atlas found ${plural(pend.size, "thing")} to connect") { TextButton({ vm.repo.acceptAll(lastCap.id) }, Modifier.testTag("accept_all")) { Text("Add all") } }
-                pend.forEach { SuggestionCard(vm, snap, it) }
-            }
-        }
-        SectionLabel("Or add")
+        if (lastCap != null && busy == null) CaptureResult(vm, snap, lastCap, inSheet = true)
+        Text("Or add directly", style = MaterialTheme.typography.bodyMedium, color = Atlas.SecondaryText, modifier = Modifier.padding(top = 18.dp, bottom = 8.dp))
         @OptIn(ExperimentalLayoutApi::class)
-        FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-            listOf(ObjType.PROJECT, ObjType.PERSON, ObjType.TASK, ObjType.IDEA, ObjType.LINK).forEach { t ->
-                AssistChip({ vm.show(Overlay.Create(t)) }, { Text(t.label) }, leadingIcon = { Icon(icon(t), null, Modifier.size(18.dp)) })
+        FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            listOf(ObjType.PROJECT, ObjType.PERSON, ObjType.TASK, ObjType.IDEA).forEach { t ->
+                Pill(t.label, icon(t), Atlas.SurfaceSecondary, Atlas.DeepPlum, Modifier.heightIn(min = 44.dp).testTag("add_${t.name}")) { vm.show(if (t == ObjType.PERSON) Overlay.AddContact() else Overlay.Create(t)) }
             }
             Box {
-                AssistChip({ more = true }, { Text("More") }, trailingIcon = { Icon(Icons.Outlined.ExpandMore, null, Modifier.size(18.dp)) })
+                Pill("More", Icons.Outlined.MoreVert, Atlas.SurfaceSecondary, Atlas.DeepPlum, Modifier.heightIn(min = 44.dp)) { more = true }
                 DropdownMenu(more, { more = false }) {
-                    listOf(ObjType.NOTE, ObjType.EVENT, ObjType.COLLECTION, ObjType.DECISION).forEach { t ->
+                    listOf(ObjType.NOTE, ObjType.LINK, ObjType.EVENT, ObjType.COLLECTION, ObjType.DECISION).forEach { t ->
                         DropdownMenuItem({ Text(t.label) }, { more = false; vm.show(Overlay.Create(t)) }, leadingIcon = { Icon(icon(t), null) })
                     }
+                    DropdownMenuItem({ Text("Photo from gallery") }, { more = false; platform.pickImage() }, leadingIcon = { Icon(Icons.Outlined.Image, null) })
                 }
             }
         }
@@ -105,12 +106,37 @@ fun CaptureContent(vm: AtlasViewModel, snap: Snapshot) {
 }
 
 @Composable
-private fun SourceButton(ic: ImageVector, label: String, onClick: () -> Unit) {
-    Column(Modifier.clip(RoundedCornerShape(16.dp)).clickable(onClick = onClick).padding(horizontal = 8.dp, vertical = 4.dp), horizontalAlignment = Alignment.CenterHorizontally) {
-        Box(Modifier.size(40.dp).clip(CircleShape).background(Atlas.SurfaceSecondary), contentAlignment = Alignment.Center) { Icon(ic, null, tint = Atlas.Primary, modifier = Modifier.size(20.dp)) }
-        Text(label, style = MaterialTheme.typography.labelSmall)
+private fun RoundSource(ic: ImageVector, desc: String, onClick: () -> Unit) {
+    Box(Modifier.size(52.dp).clip(CircleShape).background(Atlas.SurfaceSecondary).clickable(onClick = onClick).semantics { contentDescription = desc }, contentAlignment = Alignment.Center) {
+        Icon(ic, null, tint = Atlas.Primary)
     }
 }
+
+/** What happened to a capture: automatic connections (with Undo) and anything new waiting for review. Used by the sheet and Now. */
+@Composable
+fun CaptureResult(vm: AtlasViewModel, snap: Snapshot, cap: Capture, inSheet: Boolean) {
+    val sugs = snap.suggestions.filter { it.captureId == cap.id }
+    val auto = sugs.filter { it.status == SuggestionStatus.ACCEPTED && it.kind == SuggestionKind.LINK_EXISTING && snap.activityOf(it.targetId ?: "").any { a -> a.text.startsWith("Connected automatically") } }
+    val pend = sugs.filter { it.status == SuggestionStatus.PENDING }
+    if (auto.isNotEmpty()) {
+        Text("Connected automatically", style = MaterialTheme.typography.labelLarge, color = Atlas.SecondaryText, modifier = Modifier.padding(top = 14.dp, bottom = 6.dp))
+        @OptIn(ExperimentalLayoutApi::class)
+        FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            auto.forEach { s -> snap.objects[s.targetId]?.let { o -> Pill(o.title, icon(o.type), Atlas.PrimaryContainer, Atlas.DeepPlum, Modifier.testTag("auto_chip")) { vm.open(o.id) } } }
+            IconButton({ auto.forEach { vm.repo.undoAuto(it.id) }; vm.say("Automatic connections undone.") }, Modifier.semantics { contentDescription = "Undo automatic connections" }.testTag("undo_auto")) {
+                Icon(Icons.AutoMirrored.Outlined.Undo, null, tint = Atlas.Primary)
+            }
+        }
+    }
+    if (pend.isEmpty()) {
+        if (auto.isEmpty() && inSheet) Text(when (cap.status) { CaptureStatus.FAILED -> "Saved. Reading it failed — the original is kept."; CaptureStatus.CONNECTED -> "Saved and connected."; else -> "Saved. Nothing to connect." },
+            style = MaterialTheme.typography.bodyMedium, color = Atlas.SecondaryText, modifier = Modifier.padding(top = 14.dp))
+    } else if (inSheet) {
+        SectionLabel("${plural(pend.size, "new thing")} to review") { TextButton({ vm.repo.acceptAll(cap.id) }, Modifier.testTag("accept_all")) { Text("Add all") } }
+        pend.forEach { SuggestionCard(vm, snap, it) }
+    } else TextButton({ vm.go(Route.Review) }, contentPadding = PaddingValues(0.dp)) { Text("${plural(pend.size, "new item")} to review →", style = MaterialTheme.typography.titleSmall) }
+}
+
 
 /** One proposal: what it is, the words it came from, and two choices. */
 @Composable
@@ -160,60 +186,6 @@ fun ReviewScreen(vm: AtlasViewModel, snap: Snapshot) {
     }
 }
 
-// ================================================================ lists
-@Composable
-fun ObjectsScreen(vm: AtlasViewModel, snap: Snapshot, type: ObjType, selected: String?, onSelect: ((String) -> Unit)?) {
-    val today = LocalDate.now()
-    var filter by rememberSaveable(type) { mutableIntStateOf(0) }
-    var grid by rememberSaveable(type) { mutableStateOf(false) }
-    val filters: List<Pair<String, (KObject) -> Boolean>> = when (type) {
-        ObjType.TASK -> listOf<Pair<String, (KObject) -> Boolean>>("Open" to { o -> !o.done }, "Overdue" to { o -> !o.done && o.due != null && o.due < today },
-            "Today" to { o -> !o.done && o.due == today }, "Upcoming" to { o -> !o.done && o.due != null && o.due > today },
-            "Blocked" to { o -> !o.done && o.blocked }, "Done" to { o -> o.done })
-        ObjType.PROJECT -> listOf<Pair<String, (KObject) -> Boolean>>("All" to { _ -> true }) + ProjectStatus.entries.map { s -> s.label to { o: KObject -> o.projectStatus == s } }
-        ObjType.DOCUMENT -> listOf<Pair<String, (KObject) -> Boolean>>("All" to { _ -> true }, "PDFs" to { o -> o.mime == "application/pdf" }, "Images" to { o -> o.type == ObjType.IMAGE },
-            "Notes" to { o -> o.type == ObjType.NOTE }, "Links" to { o -> o.type == ObjType.LINK }, "Unconnected" to { o -> snap.relationsOf(o.id).isEmpty() })
-        else -> emptyList()
-    }
-    val base = when (type) { ObjType.DOCUMENT -> snap.live.filter { it.type in setOf(ObjType.DOCUMENT, ObjType.IMAGE, ObjType.NOTE, ObjType.LINK) }; ObjType.IDEA -> snap.live.filter { it.type == ObjType.IDEA || it.type == ObjType.DECISION }; else -> snap.ofType(type) }
-    val list = base.filter { filters.getOrNull(filter)?.second?.invoke(it) ?: true }.let { l ->
-        when (type) { ObjType.TASK -> l.sortedWith(compareBy<KObject> { it.done }.thenBy { it.due ?: LocalDate.MAX }); ObjType.PERSON -> l.sortedBy { it.title.lowercase() }
-            else -> l.sortedWith(compareByDescending<KObject> { it.pinned }.thenByDescending { it.updated }) }
-    }
-    val click: (KObject) -> Unit = { o -> if (onSelect != null) onSelect(o.id) else vm.open(o.id) }
-    val title = when (type) { ObjType.DOCUMENT -> "Documents"; ObjType.IDEA -> "Ideas"; else -> type.plural }
-    Column(Modifier.fillMaxSize().testTag("list_${type.name}")) {
-        PageHeader(title, vm, showBack = false) {
-            if (type == ObjType.DOCUMENT) IconButton({ grid = !grid }, Modifier.semantics { contentDescription = if (grid) "Show as list" else "Show as grid" }) {
-                Icon(if (grid) Icons.AutoMirrored.Outlined.ViewList else Icons.Outlined.GridView, null)
-            }
-        }
-        if (filters.isNotEmpty()) Row(Modifier.horizontalScroll(rememberScrollState()).padding(horizontal = 16.dp, vertical = 4.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            filters.forEachIndexed { i, (l, f) -> FilterChip(filter == i, { filter = i }, { Text("$l ${base.count(f)}") }, shape = CircleShape,
-                colors = FilterChipDefaults.filterChipColors(selectedContainerColor = Atlas.PrimaryContainer), modifier = Modifier.testTag("filter_$l")) }
-        }
-        if (list.isEmpty()) Empty("Nothing here", when (type) { ObjType.TASK -> "Add a task, or capture a note that mentions one."; ObjType.DOCUMENT -> "Add a photo, scan or file — it's stored encrypted on this phone."
-            else -> "Add one, or capture a note that mentions it." })
-        else if (grid) LazyVerticalGrid(GridCells.Adaptive(150.dp), contentPadding = PaddingValues(16.dp), horizontalArrangement = Arrangement.spacedBy(12.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-            items(list, key = { it.id }) { o ->
-                Card(onClick = { click(o) }) {
-                    ObjAvatar(o, 96.dp); Spacer(Modifier.height(8.dp))
-                    Text(o.title, style = MaterialTheme.typography.titleSmall, maxLines = 2, overflow = TextOverflow.Ellipsis)
-                    Text(typeLine(o), style = MaterialTheme.typography.bodySmall, color = Atlas.SecondaryText, maxLines = 1)
-                }
-            }
-        } else LazyColumn(contentPadding = PaddingValues(horizontal = 12.dp, vertical = 4.dp)) {
-            items(list, key = { it.id }) { o ->
-                val sel = o.id == selected
-                val n = snap.relationsOf(o.id).size
-                ObjRow(o, snap, Modifier.background(if (sel) Atlas.PrimaryContainer.copy(alpha = .6f) else androidx.compose.ui.graphics.Color.Transparent, RoundedCornerShape(16.dp)),
-                    sub = typeLine(o) + if (n > 0) " · " + plural(n, "connection") else "", onToggle = { vm.repo.toggleDone(o.id) }) { click(o) }
-            }
-            item { Spacer(Modifier.height(96.dp)) }
-        }
-    }
-}
-
 @Composable
 fun TimelineScreen(vm: AtlasViewModel, snap: Snapshot) {
     val today = LocalDate.now()
@@ -227,7 +199,7 @@ fun TimelineScreen(vm: AtlasViewModel, snap: Snapshot) {
     }
     var tab by rememberSaveable { mutableIntStateOf(0) }
     Column(Modifier.fillMaxSize().testTag("timeline")) {
-        PageHeader("Timeline", vm, showBack = false)
+        PageHeader("Timeline", vm)
         Box(Modifier.padding(horizontal = 20.dp, vertical = 4.dp).widthIn(max = 420.dp)) { Segmented(listOf("Planned", "Happened"), tab) { tab = it } }
         val l = if (tab == 0) entries.filter { it.planned }.sortedBy { it.date } else entries.filter { !it.planned }.sortedByDescending { it.date }
         LazyColumn(contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp)) {
@@ -245,18 +217,24 @@ fun TimelineScreen(vm: AtlasViewModel, snap: Snapshot) {
 fun SearchScreen(vm: AtlasViewModel, snap: Snapshot, initial: String) {
     var q by rememberSaveable { mutableStateOf(initial) }
     val res = remember(q, snap) { vm.repo.search(q) }
+    val platform = LocalPlatform.current
+    val scope = rememberCoroutineScope()
+    val events by vm.sync.events.collectAsState()
+    val phone by produceState(emptyList<com.jmr.atlas.integrations.Contacts.Hit>(), q) { value = if (q.length >= 2) kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) { vm.sync.contacts.search(q, 6) } else emptyList() }
     val fr = remember { FocusRequester() }
     LaunchedEffect(Unit) { if (initial.isEmpty()) runCatching { fr.requestFocus() } }
     Column(Modifier.fillMaxSize().testTag("search")) {
         Row(Modifier.fillMaxWidth().padding(start = 4.dp, end = 16.dp, top = 8.dp), verticalAlignment = Alignment.CenterVertically) {
-            IconButton({ vm.back() }, Modifier.semantics { contentDescription = "Back" }) { Icon(Icons.AutoMirrored.Outlined.ArrowBack, null) }
+            Spacer(Modifier.width(12.dp))
             OutlinedTextField(q, { q = it }, Modifier.weight(1f).focusRequester(fr).testTag("search_field"),
-                placeholder = { Text("Search people, projects, documents…") }, leadingIcon = { Icon(Icons.Outlined.Search, null) }, singleLine = true, shape = CircleShape,
-                trailingIcon = { if (q.isNotEmpty()) IconButton({ q = "" }, Modifier.semantics { contentDescription = "Clear" }) { Icon(Icons.Outlined.Close, null) } },
+                placeholder = { Text("Search everything, contacts and calendar") }, leadingIcon = { Icon(Icons.Outlined.Search, null) }, singleLine = true, shape = CircleShape,
+                trailingIcon = { if (q.isNotEmpty()) IconButton({ q = "" }, Modifier.semantics { contentDescription = "Clear" }) { Icon(Icons.Outlined.Close, null) }
+                    else IconButton({ platform.dictate { q = it } }, Modifier.semantics { contentDescription = "Search by voice" }) { Icon(Icons.Outlined.Mic, null) } },
                 keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search), keyboardActions = KeyboardActions(onSearch = {}))
         }
         LazyColumn(contentPadding = PaddingValues(horizontal = 12.dp, vertical = 8.dp), modifier = Modifier.widthIn(max = 800.dp)) {
-            if (q.isNotBlank() && res.exact.isEmpty()) item { Empty("No matches", "Atlas searches titles, notes, people's details and text read from photos and PDFs.") }
+            if (q.isBlank()) item { Empty("Search everything", "People, projects, notes, text inside photos and PDFs, saved pages, your phone contacts and your calendar.") }
+            if (q.isNotBlank() && res.exact.isEmpty() && phone.isEmpty()) item { Empty("No matches", "Atlas searches titles, notes, people's details and text read from photos, PDFs and saved pages.") }
             if (res.exact.isNotEmpty()) {
                 item { SectionLabel("Matches · ${res.exact.size}", Modifier.padding(horizontal = 8.dp)) }
                 items(res.exact.take(40), key = { "e" + it.id }) { o -> ObjRow(o, snap, sub = snippet(o, q), onToggle = { vm.repo.toggleDone(o.id) }) { vm.open(o.id) } }
@@ -264,6 +242,24 @@ fun SearchScreen(vm: AtlasViewModel, snap: Snapshot, initial: String) {
             if (res.connected.isNotEmpty()) {
                 item { SectionLabel("Connected to those · ${res.connected.size}", Modifier.padding(horizontal = 8.dp)) }
                 items(res.connected, key = { "c" + it.first.id }) { (o, via) -> ObjRow(o, snap, sub = "${o.type.label} · via ${via.title}") { vm.open(o.id) } }
+            }
+            val outside = phone.filter { h -> snap.ofType(ObjType.PERSON).none { it.contactKey == h.lookupKey } }
+            if (outside.isNotEmpty()) {
+                item { SectionLabel("In your phone contacts · ${outside.size}", Modifier.padding(horizontal = 8.dp)) }
+                items(outside, key = { "p" + it.lookupKey }) { h ->
+                    ListItem({ Text(h.name) }, supportingContent = { Text(h.sub.ifBlank { "Phone contact · tap to add to Atlas" }) },
+                        leadingContent = { Box(Modifier.size(40.dp).clip(CircleShape).background(Atlas.SurfaceSecondary), contentAlignment = Alignment.Center) { Icon(Icons.Outlined.Contacts, null, tint = Atlas.Primary) } },
+                        modifier = Modifier.clip(RoundedCornerShape(16.dp)).clickable { scope.launch { val id = withContext(kotlinx.coroutines.Dispatchers.IO) { vm.sync.addContact(h.lookupKey) }; id?.let { vm.open(it); vm.say("${h.name} added to Atlas.") } } })
+                }
+            }
+            val cal = events.filter { q.length >= 2 && (it.title.contains(q, true) || it.location.contains(q, true)) }
+            if (cal.isNotEmpty()) {
+                item { SectionLabel("On your calendar · ${cal.size}", Modifier.padding(horizontal = 8.dp)) }
+                items(cal.take(8), key = { "e" + it.instanceId }) { e ->
+                    ListItem({ Text(e.title) }, supportingContent = { Text(com.jmr.atlas.ui.cards.eventWhen(e, LocalDate.now())) },
+                        leadingContent = { Icon(Icons.Outlined.Event, null, tint = Atlas.DeepTeal) },
+                        modifier = Modifier.clip(RoundedCornerShape(16.dp)).clickable { platform.launch(com.jmr.atlas.integrations.Calendars.viewIntent(e.eventId)) })
+                }
             }
         }
     }
@@ -313,61 +309,7 @@ fun InsightsView(vm: AtlasViewModel, snap: Snapshot, focusId: String?, modifier:
     }
 }
 
-// ================================================================ settings & trash
-@Composable
-fun SettingsScreen(vm: AtlasViewModel, snap: Snapshot) {
-    val platform = LocalPlatform.current
-    var confirmWipe by remember { mutableStateOf(false) }
-    var details by rememberSaveable { mutableStateOf(false) }
-    val examples = snap.objects.values.count { it.origin == Origin.EXAMPLE }
-    val trashed = snap.objects.values.count { it.trashed }
-    Column(Modifier.fillMaxSize().testTag("settings")) {
-        PageHeader("Settings", vm)
-        Column(Modifier.verticalScroll(rememberScrollState()).padding(horizontal = 20.dp).widthIn(max = 760.dp)) {
-            SectionLabel("Privacy")
-            Card(Modifier.fillMaxWidth(), color = Atlas.SurfaceSecondary) {
-                Fact(Icons.Outlined.WifiOff, "Nothing leaves this phone", "Atlas has no internet access.")
-                Fact(Icons.Outlined.Lock, "Files are encrypted", "Photos, scans and documents are locked to this phone.")
-                Fact(Icons.Outlined.CloudOff, "Not in Android backup", "Use Export below to keep your own copy.")
-                TextButton({ details = !details }, contentPadding = PaddingValues(0.dp)) { Text(if (details) "Hide details" else "Details") }
-                if (details) Text(
-                    "• No INTERNET permission in this build.\n• Originals: AES-256-GCM, key in Android Keystore (${if (vm.repo.files.keystoreBacked) "hardware-backed where available" else "test key"}).\n" +
-                        "• Text recognition: ML Kit, bundled model, on device. Suggestions: on-device rules. No AI providers.\n• Excluded from cloud backup and device transfer.\n" +
-                        "• Not yet: app lock and an encrypted database file. Your screen lock protects notes and other text.",
-                    style = MaterialTheme.typography.bodySmall, color = Atlas.SecondaryText)
-            }
-            SectionLabel("Your data")
-            SettingRow(Icons.Outlined.Download, "Export everything", "A readable JSON copy. Files are listed, not included.") { platform.export(vm.repo.exportJson()) }
-            SettingRow(Icons.Outlined.Delete, "Trash", if (trashed == 0) "Empty" else plural(trashed, "item")) { vm.go(Route.Trash) }
-            if (examples > 0) SettingRow(Icons.Outlined.CleaningServices, "Remove example workspace", plural(examples, "example item")) { vm.repo.clearExample(); vm.focusOn(null); vm.say("Example workspace removed.") }
-            SettingRow(Icons.Outlined.DeleteForever, "Erase everything", "All items, connections and files on this phone.", danger = true) { confirmWipe = true }
-            SectionLabel("About")
-            Text("Atlas 0.4 · No ads, analytics or tracking.\nRoboto Flex © Google (SIL Open Font License 1.1). ML Kit © Google.",
-                style = MaterialTheme.typography.bodySmall, color = Atlas.SecondaryText)
-            Spacer(Modifier.height(80.dp))
-        }
-    }
-    if (confirmWipe) AlertDialog({ confirmWipe = false }, title = { Text("Erase everything?") }, text = { Text("All items, connections, captures and files are permanently deleted from this phone.") },
-        confirmButton = { TextButton({ vm.repo.wipeAll(); vm.focusOn(null); confirmWipe = false; vm.say("Everything erased.") }) { Text("Erase", color = Atlas.Error) } },
-        dismissButton = { TextButton({ confirmWipe = false }) { Text("Cancel") } })
-}
-
-@Composable
-private fun Fact(ic: ImageVector, t: String, d: String) {
-    Row(Modifier.padding(vertical = 6.dp), verticalAlignment = Alignment.CenterVertically) {
-        Icon(ic, null, tint = Atlas.Primary, modifier = Modifier.size(20.dp)); Spacer(Modifier.width(12.dp))
-        Column { Text(t, style = MaterialTheme.typography.titleSmall); Text(d, style = MaterialTheme.typography.bodySmall, color = Atlas.SecondaryText) }
-    }
-}
-
-@Composable
-private fun SettingRow(ic: ImageVector, t: String, d: String, danger: Boolean = false, onClick: () -> Unit) {
-    Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(16.dp)).clickable(onClick = onClick).heightIn(min = 56.dp).padding(horizontal = 8.dp, vertical = 10.dp), verticalAlignment = Alignment.CenterVertically) {
-        Icon(ic, null, tint = if (danger) Atlas.Error else Atlas.Primary); Spacer(Modifier.width(16.dp))
-        Column { Text(t, style = MaterialTheme.typography.titleSmall, color = if (danger) Atlas.Error else Atlas.DeepPlum); Text(d, style = MaterialTheme.typography.bodySmall, color = Atlas.SecondaryText) }
-    }
-}
-
+// ================================================================ trash
 @Composable
 fun TrashScreen(vm: AtlasViewModel, snap: Snapshot) {
     val l = snap.objects.values.filter { it.trashed }.sortedByDescending { it.updated }
@@ -385,33 +327,3 @@ fun TrashScreen(vm: AtlasViewModel, snap: Snapshot) {
     }
 }
 
-// ================================================================ onboarding
-@Composable
-fun Onboarding(vm: AtlasViewModel) {
-    Box(Modifier.fillMaxSize().background(Atlas.Background).windowInsetsPadding(WindowInsets.safeDrawing).testTag("onboarding"), contentAlignment = Alignment.Center) {
-        Column(Modifier.widthIn(max = 480.dp).verticalScroll(rememberScrollState()).padding(28.dp), horizontalAlignment = Alignment.CenterHorizontally) {
-            AtlasMark(88.dp)
-            Spacer(Modifier.height(20.dp))
-            Text("ATLAS", style = MaterialTheme.typography.headlineMedium.copy(letterSpacing = androidx.compose.ui.unit.TextUnit(8f, androidx.compose.ui.unit.TextUnitType.Sp)))
-            Spacer(Modifier.height(8.dp))
-            Text("Your people, projects, files and ideas — connected.", style = MaterialTheme.typography.titleMedium, textAlign = TextAlign.Center)
-            Spacer(Modifier.height(24.dp))
-            Point(Icons.Outlined.Bolt, "Capture anything — a thought, photo, scan or PDF.")
-            Point(Icons.Outlined.Hub, "Atlas suggests who and what it relates to. You decide.")
-            Point(Icons.Outlined.Lock, "Everything stays on this phone.")
-            Spacer(Modifier.height(24.dp))
-            Button({ vm.finishOnboarding(true) }, Modifier.fillMaxWidth().heightIn(min = 52.dp).testTag("start_example")) { Text("Explore an example") }
-            Spacer(Modifier.height(10.dp))
-            OutlinedButton({ vm.finishOnboarding(false) }, Modifier.fillMaxWidth().heightIn(min = 52.dp).testTag("start_empty")) { Text("Start empty") }
-            Text("You can remove the example any time.", style = MaterialTheme.typography.bodySmall, color = Atlas.SecondaryText, modifier = Modifier.padding(top = 10.dp))
-        }
-    }
-}
-
-@Composable
-private fun Point(ic: ImageVector, t: String) {
-    Row(Modifier.fillMaxWidth().padding(vertical = 6.dp), verticalAlignment = Alignment.CenterVertically) {
-        Box(Modifier.size(36.dp).clip(CircleShape).background(Atlas.SurfaceSecondary), contentAlignment = Alignment.Center) { Icon(ic, null, tint = Atlas.Primary, modifier = Modifier.size(18.dp)) }
-        Spacer(Modifier.width(12.dp)); Text(t, style = MaterialTheme.typography.bodyMedium)
-    }
-}

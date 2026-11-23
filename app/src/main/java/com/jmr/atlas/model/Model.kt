@@ -26,7 +26,44 @@ enum class ProjectStatus(val label: String) { ACTIVE("Active"), PLANNING("Planni
 enum class Priority(val label: String) { NONE("None"), LOW("Low"), MEDIUM("Medium"), HIGH("High") }
 
 /** How an object or relationship came to exist. Shown to the user; never hidden. */
-enum class Origin(val label: String) { USER("Added by you"), EXTRACTED("Extracted on this phone"), IMPORTED("Imported"), AI("Suggested by AI"), EXAMPLE("Example data") }
+enum class Origin(val label: String) {
+    USER("Added by you"), EXTRACTED("Extracted on this phone"), IMPORTED("Imported"), AI("Suggested by on-device AI"), EXAMPLE("Example data"),
+    AUTO("Connected automatically"), CONTACTS("From your phone contacts"), CALENDAR("From your calendar"), WEB("From the web page"),
+}
+
+/** Project health, posted with an update (Linear-style). */
+enum class Health(val label: String) { ON_TRACK("On track"), AT_RISK("At risk"), OFF_TRACK("Off track") }
+enum class Repeat(val label: String) { NONE("Doesn't repeat"), DAILY("Every day"), WEEKDAYS("Every weekday"), WEEKLY("Every week"), MONTHLY("Every month"), YEARLY("Every year") }
+
+/** Repeated values that belong to one item: contact fields, custom fields, key facts, checklists, updates, highlights. */
+enum class DetailKind(val label: String, val toContact: Boolean = false) {
+    PHONE("Phone", true), EMAIL("Email", true), ADDRESS("Address", true), WEBSITE("Website", true), SOCIAL("Social", true), DATE("Date", true),
+    CUSTOM("Field"), FACT("Key fact"), REMEMBER("Thing to remember"), STEP("Step"), UPDATE("Update"), HIGHLIGHT("Highlight"),
+}
+
+/** The ten custom field types (design I06). SECRET is a flag, not a type: any text-like value can be masked. */
+enum class FieldType(val label: String) {
+    TEXT("Text"), NUMBER("Number"), MONEY("Money"), DATE("Date"), CHOICE("Choice"), CHECKBOX("Checkbox"), LINK("Link"), PERSON("Person"), ITEM("Item"), RATING("Rating"),
+}
+
+data class Detail(
+    val id: String = newId(),
+    val objectId: String,
+    val kind: DetailKind,
+    val label: String = "",
+    val value: String = "",
+    val type: FieldType = FieldType.TEXT,
+    val sort: Int = 0,
+    /** STEP: done. CUSTOM/FACT: secret (masked until “Show”). */
+    val flag: Boolean = false,
+    /** STEP: completed date; UPDATE: Health name; FACT: “page 2”; CUSTOM: field definition id. */
+    val extra: String = "",
+    val created: Long = System.currentTimeMillis(),
+    val origin: Origin = Origin.USER,
+)
+
+/** A custom field added to every item of a type (“Every project”). Values live in Detail(kind = CUSTOM). */
+data class FieldDef(val id: String = newId(), val objType: ObjType, val label: String, val type: FieldType, val options: List<String> = emptyList(), val secret: Boolean = false, val sort: Int = 0)
 
 /** Relationship review state. PROPOSED edges are drawn dashed and are never treated as facts. */
 enum class Review { CONFIRMED, PROPOSED, REJECTED }
@@ -79,8 +116,34 @@ data class KObject(
     val extracted: String = "",
     // event / milestone
     val eventDate: LocalDate? = null,
+    // 0.5: per-type details
+    /** content:// photo from the phone contact, or "vault:<file>" for a photo chosen in Atlas (encrypted). */
+    val photo: String = "",
+    /** ContactsContract lookup key when this person is linked to a phone contact. */
+    val contactKey: String = "",
+    val nickname: String = "",
+    /** Document kind (Estimate, Invoice…) or link kind (Reference, Article…). */
+    val kind: String = "",
+    /** The date printed on a document, as opposed to when it was added (Paperless-style). */
+    val docDate: LocalDate? = null,
+    /** Hard deadline, separate from the day you plan to do it (`due`) — Todoist-style. */
+    val deadline: LocalDate? = null,
+    val remindAt: Long? = null,
+    val repeat: Repeat = Repeat.NONE,
+    val health: Health? = null,
+    val summary: String = "",
+    val site: String = "",
+    val author: String = "",
+    val published: LocalDate? = null,
+    val readMinutes: Int = 0,
+    val isRead: Boolean = false,
+    /** Encrypted preview image for links (vault file). */
+    val coverFile: String = "",
+    val previewAt: Long? = null,
+    val calendarEventId: Long? = null,
 ) {
-    fun searchText() = listOf(title, body, extracted, role, org, email, url).filter { it.isNotBlank() }.joinToString("\n")
+    fun searchText() = listOf(title, body, extracted, role, org, email, url, nickname, kind, summary, site, author).filter { it.isNotBlank() }.joinToString("\n")
+    val firstName get() = title.trim().substringBefore(' ')
     val initials get() = title.split(" ").filter { it.isNotBlank() }.take(2).joinToString("") { it.first().uppercase() }.ifEmpty { "?" }
 }
 
@@ -146,7 +209,11 @@ data class Snapshot(
     val captures: List<Capture> = emptyList(),
     val suggestions: List<Suggestion> = emptyList(),
     val activity: List<Activity> = emptyList(),
+    val details: List<Detail> = emptyList(),
+    val fieldDefs: List<FieldDef> = emptyList(),
 ) {
+    private val detailsBy: Map<String, List<Detail>> by lazy { details.groupBy { it.objectId }.mapValues { e -> e.value.sortedWith(compareBy({ it.sort }, { it.created })) } }
+    fun detailsOf(id: String, kind: DetailKind? = null) = detailsBy[id].orEmpty().filter { kind == null || it.kind == kind }
     val live: List<KObject> by lazy { objects.values.filter { !it.trashed } }
     private val byObj: Map<String, List<Relation>> by lazy {
         val m = HashMap<String, MutableList<Relation>>()

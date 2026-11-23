@@ -7,14 +7,9 @@ import androidx.compose.animation.fadeOut
 import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.text.BasicTextField
-import androidx.compose.foundation.text.KeyboardActions
-import androidx.compose.foundation.text.KeyboardOptions
-import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.ArrowBack
 import androidx.compose.material.icons.outlined.*
@@ -23,14 +18,13 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
-import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import com.jmr.atlas.LocalPlatform
@@ -43,46 +37,66 @@ import com.jmr.atlas.ui.universe.MapActions
 import com.jmr.atlas.ui.universe.MapMenu
 import com.jmr.atlas.ui.universe.MapView
 import com.jmr.atlas.ui.universe.UniverseMap
-import kotlinx.coroutines.launch
+import kotlinx.coroutines.flow.MutableStateFlow
 
 private data class Dest(val route: Route, val label: String, val icon: ImageVector)
 
+/** Navigation (design 0.5): Now · Universe · Capture · Search · Library — same on the phone bar and the Fold rail. */
 private val DESTS = listOf(
+    Dest(Route.Now, "Now", Icons.Outlined.WbSunny),
     Dest(Route.Universe, "Universe", Icons.Outlined.Hub),
-    Dest(Route.Objects(ObjType.PERSON), "People", Icons.Outlined.Groups),
-    Dest(Route.Objects(ObjType.PROJECT), "Projects", Icons.Outlined.FolderOpen),
-    Dest(Route.Objects(ObjType.DOCUMENT), "Documents", Icons.Outlined.Description),
-    Dest(Route.Objects(ObjType.IDEA), "Ideas", Icons.Outlined.Lightbulb),
-    Dest(Route.Objects(ObjType.TASK), "Tasks", Icons.Outlined.TaskAlt),
-    Dest(Route.Objects(ObjType.COLLECTION), "Collections", Icons.Outlined.Layers),
-    Dest(Route.Timeline, "Timeline", Icons.Outlined.CalendarMonth),
+    Dest(Route.Search, "Search", Icons.Outlined.Search),
+    Dest(Route.Library(), "Library", Icons.Outlined.LibraryBooks),
 )
-
-private fun Route.isTop() = this == Route.Universe || this is Route.Objects || this == Route.Timeline
+private fun Route.dest() = when (this) { is Route.Library -> Route.Library(); else -> this }
 
 @Composable
-fun AtlasRoot(vm: AtlasViewModel) {
+fun AtlasRoot(vm: AtlasViewModel, locked: MutableStateFlow<Boolean>) {
     val snap by vm.snap.collectAsState()
     val onboarded by vm.onboarded.collectAsState()
     val stack by vm.stack.collectAsState()
     val focus by vm.focus.collectAsState()
     val msg by vm.messages.collectAsState()
+    val isLocked by locked.collectAsState()
     val snackbar = remember { SnackbarHostState() }
     val mapView = remember { MapView() }
-    LaunchedEffect(msg) { msg?.let { snackbar.showSnackbar(it); vm.messages.value = null } }
+    LaunchedEffect(msg) {
+        msg?.let { m ->
+            val r = snackbar.showSnackbar(m.text, actionLabel = if (m.undo != null) "Undo" else null, duration = SnackbarDuration.Short)
+            if (r == SnackbarResult.ActionPerformed) m.undo?.invoke()
+            vm.messages.value = null
+        }
+    }
 
     CompositionLocalProvider(LocalFiles provides vm.repo.files) {
         Box(Modifier.fillMaxSize().background(Atlas.Background)) {
-            if (!onboarded) Onboarding(vm)
-            else {
-                BackHandler(enabled = stack.size > 1 || vm.hasFocusHistory) { vm.back() }
-                BoxWithConstraints(Modifier.fillMaxSize().windowInsetsPadding(WindowInsets.safeDrawing)) {
-                    if (maxWidth >= 600.dp) Wide(vm, snap, stack.last(), focus, mapView, side = maxWidth >= 760.dp)
-                    else Compact(vm, snap, stack.last(), focus, mapView, narrow = maxWidth < 380.dp)
+            when {
+                isLocked -> LockScreen { locked.value = false }
+                !onboarded -> Onboarding(vm)
+                else -> {
+                    BackHandler(enabled = stack.size > 1) { vm.back() }
+                    BoxWithConstraints(Modifier.fillMaxSize().windowInsetsPadding(WindowInsets.safeDrawing)) {
+                        if (maxWidth >= 600.dp) Wide(vm, snap, stack.last(), focus, mapView, side = maxWidth >= 760.dp)
+                        else Compact(vm, snap, stack.last(), focus, mapView, narrow = maxWidth < 380.dp)
+                    }
+                    Overlays(vm, snap)
                 }
-                Overlays(vm, snap)
             }
-            SnackbarHost(snackbar, Modifier.align(Alignment.BottomCenter).windowInsetsPadding(WindowInsets.safeDrawing).padding(bottom = 24.dp))
+            SnackbarHost(snackbar, Modifier.align(Alignment.BottomCenter).windowInsetsPadding(WindowInsets.safeDrawing).padding(bottom = 96.dp))
+        }
+    }
+}
+
+@Composable
+private fun LockScreen(onUnlocked: () -> Unit) {
+    val platform = LocalPlatform.current
+    LaunchedEffect(Unit) { platform.authenticate(onUnlocked) }
+    Column(Modifier.fillMaxSize().windowInsetsPadding(WindowInsets.safeDrawing).testTag("lock_screen"), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Center) {
+        AtlasMark(72.dp); Spacer(Modifier.height(18.dp))
+        Text("Atlas is locked", style = MaterialTheme.typography.headlineSmall)
+        Spacer(Modifier.height(20.dp))
+        Button({ platform.authenticate(onUnlocked) }, colors = ButtonDefaults.buttonColors(containerColor = Atlas.Primary), modifier = Modifier.heightIn(min = 52.dp)) {
+            Icon(Icons.Outlined.Fingerprint, null); Spacer(Modifier.width(8.dp)); Text("Unlock")
         }
     }
 }
@@ -96,7 +110,6 @@ private fun mapActions(vm: AtlasViewModel, focus: String?) = MapActions(
     pickFocus = { vm.show(Overlay.FocusPicker) },
 )
 
-// ---------------------------------------------------------------- shared controls
 @Composable
 private fun ModeSwitch(mode: MapMode, onMode: (MapMode) -> Unit) {
     Row(Modifier.clip(CircleShape).background(Atlas.SurfaceSecondary).padding(3.dp)) {
@@ -112,70 +125,14 @@ private fun ModeSwitch(mode: MapMode, onMode: (MapMode) -> Unit) {
 }
 
 @Composable
-private fun RowScope.MapControls(vm: AtlasViewModel, snap: Snapshot, focus: String?, mapView: MapView, showExample: Boolean, trailing: Boolean = true) {
+private fun MapBar(vm: AtlasViewModel, snap: Snapshot, focus: String?, mapView: MapView, showExample: Boolean) {
     val mode by vm.mode.collectAsState()
-    if (vm.hasFocusHistory) IconButton({ vm.focusBack() }, Modifier.semantics { contentDescription = "Previous focus" }) { Icon(Icons.AutoMirrored.Outlined.ArrowBack, null) }
-    ModeSwitch(mode) { vm.setMode(it) }
-    if (trailing) {
+    Row(Modifier.fillMaxWidth().padding(horizontal = 8.dp).heightIn(min = 56.dp), verticalAlignment = Alignment.CenterVertically) {
+        if (vm.hasFocusHistory) IconButton({ vm.focusBack() }, Modifier.semantics { contentDescription = "Previous focus" }) { Icon(Icons.AutoMirrored.Outlined.ArrowBack, null) }
+        ModeSwitch(mode) { vm.setMode(it) }
         Spacer(Modifier.weight(1f))
-        if (showExample) ExampleChip(vm, snap)
+        if (showExample && snap.objects.values.any { it.origin == Origin.EXAMPLE }) Pill("Example data", Icons.Outlined.Science, Atlas.Peach, Atlas.DeepPlum, Modifier.testTag("example_chip")) { vm.show(Overlay.RemoveExample) }
         if (mode == MapMode.MAP) MapMenu(mapView, focus != null, { vm.show(Overlay.FocusPicker) }, { vm.focusOn(null) })
-    }
-}
-
-@Composable
-private fun ExampleChip(vm: AtlasViewModel, snap: Snapshot) {
-    if (snap.objects.values.none { it.origin == Origin.EXAMPLE }) return
-    Pill("Example data", Icons.Outlined.Science, Atlas.Peach, Atlas.DeepPlum, Modifier.testTag("example_chip")) { vm.show(Overlay.RemoveExample) }
-}
-
-@Composable
-private fun NewFab(vm: AtlasViewModel, route: Route, modifier: Modifier) {
-    val (label, action) = when (route) {
-        is Route.Objects -> if (route.type == ObjType.DOCUMENT) "Add" to { vm.show(Overlay.Capture) } else "New ${route.type.label.lowercase()}" to { vm.show(Overlay.Create(route.type)) }
-        Route.Timeline -> "New milestone" to { vm.show(Overlay.Create(ObjType.EVENT)) }
-        else -> return
-    }
-    ExtendedFloatingActionButton({ action() }, modifier.testTag("new_fab"), containerColor = Atlas.Primary, contentColor = Color.White, shape = CircleShape) {
-        Icon(Icons.Outlined.Add, null); Spacer(Modifier.width(8.dp)); Text(label)
-    }
-}
-
-/** Searches everything. Voice uses the system recognizer (on-device preferred). Not an assistant — it looks things up. */
-@Composable
-private fun SearchBar(vm: AtlasViewModel) {
-    val platform = LocalPlatform.current
-    var q by remember { mutableStateOf("") }
-    Surface(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 10.dp).widthIn(max = 720.dp).testTag("search_bar"), shape = CircleShape, color = Atlas.Surface,
-        border = androidx.compose.foundation.BorderStroke(1.dp, Atlas.Border), shadowElevation = 2.dp) {
-        Row(Modifier.heightIn(min = 56.dp).padding(start = 18.dp, end = 6.dp), verticalAlignment = Alignment.CenterVertically) {
-            Icon(Icons.Outlined.Search, null, tint = Atlas.SecondaryText)
-            Spacer(Modifier.width(12.dp))
-            Box(Modifier.weight(1f)) {
-                if (q.isEmpty()) Text("Search people, projects, documents…", style = MaterialTheme.typography.bodyLarge, color = Atlas.SecondaryText)
-                BasicTextField(q, { q = it }, Modifier.fillMaxWidth().testTag("search_bar_field"), singleLine = true, textStyle = MaterialTheme.typography.bodyLarge.copy(color = Atlas.DeepPlum),
-                    cursorBrush = SolidColor(Atlas.Primary), keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
-                    keyboardActions = KeyboardActions(onSearch = { vm.search(q); q = "" }))
-            }
-            IconButton({ platform.dictate { q = it; vm.search(it); q = "" } }, Modifier.semantics { contentDescription = "Search by voice" }) { Icon(Icons.Outlined.Mic, null, tint = Atlas.SecondaryText) }
-        }
-    }
-}
-
-@Composable
-private fun RouteContent(vm: AtlasViewModel, snap: Snapshot, route: Route) {
-    val q by vm.query.collectAsState()
-    AnimatedContent(route, transitionSpec = { fadeIn() togetherWith fadeOut() }, label = "route") { r ->
-        when (r) {
-            is Route.Detail -> DetailScreen(vm, snap, r.id)
-            Route.Review -> ReviewScreen(vm, snap)
-            Route.Search -> SearchScreen(vm, snap, q)
-            Route.Settings -> SettingsScreen(vm, snap)
-            Route.Trash -> TrashScreen(vm, snap)
-            Route.Timeline -> TimelineScreen(vm, snap)
-            is Route.Objects -> ObjectsScreen(vm, snap, r.type, null, null)
-            Route.Universe -> {}
-        }
     }
 }
 
@@ -193,103 +150,117 @@ private fun SheetMap(vm: AtlasViewModel, snap: Snapshot, focus: String?, mapView
     }
 }
 
-// ============================================================ wide: rail + toolbar + map + inspector (Fold inner, tablets)
 @Composable
-private fun Wide(vm: AtlasViewModel, snap: Snapshot, route: Route, focus: String?, mapView: MapView, side: Boolean) {
-    val mode by vm.mode.collectAsState()
-    var listSel by remember { mutableStateOf<String?>(null) }
-    Column(Modifier.fillMaxSize()) {
-        Row(Modifier.fillMaxWidth().height(64.dp).padding(horizontal = 12.dp), verticalAlignment = Alignment.CenterVertically) {
-            AtlasWordmark(Modifier.width(150.dp))
-            Spacer(Modifier.weight(1f))
-            if (route == Route.Universe) Row(verticalAlignment = Alignment.CenterVertically) { MapControls(vm, snap, focus, mapView, showExample = false, trailing = false); if (mode == MapMode.MAP) MapMenu(mapView, focus != null, { vm.show(Overlay.FocusPicker) }, { vm.focusOn(null) }) }
-            Spacer(Modifier.weight(1f))
-            ExampleChip(vm, snap)
-            IconButton({ vm.search("") }, Modifier.semantics { contentDescription = "Search" }) { Icon(Icons.Outlined.Search, null) }
-            BadgeIcon(snap.pending().size, Icons.Outlined.Notifications, "Review", { vm.go(Route.Review) }, Modifier.testTag("bell"))
-            IconButton({ vm.go(Route.Settings) }, Modifier.semantics { contentDescription = "Settings" }) { Icon(Icons.Outlined.Settings, null) }
-        }
-        Row(Modifier.weight(1f).fillMaxWidth()) {
-            Rail(vm, route)
-            Box(Modifier.weight(1f).fillMaxHeight()) {
-                when {
-                    route == Route.Universe && side -> Column(Modifier.fillMaxSize()) {
-                        Box(Modifier.weight(1f)) { if (mode == MapMode.MAP) UniverseMap(snap, focus, false, mapView, mapActions(vm, focus)) else InsightsView(vm, snap, focus) }
-                        SearchBar(vm)
-                    }
-                    route == Route.Universe -> SheetMap(vm, snap, focus, mapView, phone = false, peek = 236.dp)
-                    route is Route.Objects -> ObjectsScreen(vm, snap, route.type, listSel.takeIf { side }, if (side) ({ listSel = it }) else null)
-                    else -> RouteContent(vm, snap, route)
-                }
-                if (route is Route.Objects || route == Route.Timeline) NewFab(vm, route, Modifier.align(Alignment.BottomEnd).padding(20.dp))
-            }
-            val inspectorId = when { route == Route.Universe -> focus; route is Route.Objects -> listSel?.takeIf { snap.objects[it]?.trashed == false }; else -> null }
-            if (side && (route == Route.Universe || (route is Route.Objects && inspectorId != null))) {
-                InspectorPane(vm, snap, inspectorId, Modifier.width(320.dp).padding(start = 4.dp, end = 12.dp, bottom = 12.dp))
-            }
+private fun RouteContent(vm: AtlasViewModel, snap: Snapshot, route: Route, libSel: String? = null, onLibSel: ((String) -> Unit)? = null) {
+    val q by vm.query.collectAsState()
+    AnimatedContent(route, transitionSpec = { fadeIn() togetherWith fadeOut() }, label = "route") { r ->
+        when (r) {
+            Route.Now -> NowScreen(vm, snap)
+            is Route.Detail -> DetailScreen(vm, snap, r.id)
+            Route.Review -> ReviewScreen(vm, snap)
+            Route.Search -> SearchScreen(vm, snap, q)
+            Route.Settings -> SettingsScreen(vm, snap)
+            Route.Integrations -> IntegrationsScreen(vm, snap)
+            Route.AiSettings -> AiSettingsScreen(vm)
+            Route.Security -> SecurityScreen(vm)
+            Route.Trash -> TrashScreen(vm, snap)
+            Route.Timeline -> TimelineScreen(vm, snap)
+            is Route.Library -> LibraryScreen(vm, snap, r.type, libSel, onLibSel)
+            is Route.Connections -> ConnectionsScreen(vm, snap, r.id)
+            is Route.History -> HistoryScreen(vm, snap, r.id)
+            Route.Universe -> {}
         }
     }
 }
 
+// ============================================================ wide: rail + content (+ card pane) — Fold inner screen, tablets
 @Composable
-private fun Rail(vm: AtlasViewModel, route: Route) {
-    Column(Modifier.width(88.dp).fillMaxHeight().verticalScroll(rememberScrollState()).padding(vertical = 4.dp), horizontalAlignment = Alignment.CenterHorizontally) {
-        DESTS.forEach { d ->
-            val on = route == d.route
-            Column(Modifier.padding(vertical = 2.dp).width(76.dp).clip(RoundedCornerShape(18.dp)).background(if (on) Atlas.PrimaryContainer else Color.Transparent)
-                .selectable(on, role = Role.Tab) { vm.top(d.route) }.padding(vertical = 7.dp).testTag("nav_${d.label}"), horizontalAlignment = Alignment.CenterHorizontally) {
-                Icon(d.icon, null, tint = if (on) Atlas.DeepPlum else Atlas.SecondaryText)
-                Text(d.label, style = MaterialTheme.typography.labelSmall, color = if (on) Atlas.DeepPlum else Atlas.SecondaryText, maxLines = 1)
+private fun Wide(vm: AtlasViewModel, snap: Snapshot, route: Route, focus: String?, mapView: MapView, side: Boolean) {
+    val mode by vm.mode.collectAsState()
+    var libSel by remember { mutableStateOf<String?>(null) }
+    Row(Modifier.fillMaxSize()) {
+        Rail(vm, snap, route)
+        Box(Modifier.weight(1f).fillMaxHeight()) {
+            when {
+                route == Route.Universe -> Column(Modifier.fillMaxSize()) {
+                    MapBar(vm, snap, focus, mapView, showExample = true)
+                    if (side) Box(Modifier.weight(1f)) { if (mode == MapMode.MAP) UniverseMap(snap, focus, false, mapView, mapActions(vm, focus)) else InsightsView(vm, snap, focus) }
+                    else Box(Modifier.weight(1f)) { SheetMap(vm, snap, focus, mapView, phone = false, peek = 236.dp) }
+                }
+                route == Route.Now -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.TopCenter) { NowScreen(vm, snap, Modifier.widthIn(max = 760.dp)) }
+                route is Route.Library -> RouteContent(vm, snap, route, libSel.takeIf { side }, if (side) ({ libSel = it }) else null)
+                else -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.TopCenter) { Box(Modifier.widthIn(max = 820.dp)) { RouteContent(vm, snap, route) } }
             }
         }
-        Spacer(Modifier.height(10.dp))
+        val paneId = when { route == Route.Universe -> focus; route is Route.Library -> libSel?.takeIf { snap.objects[it]?.trashed == false }; else -> null }
+        if (side && route == Route.Universe) InspectorPane(vm, snap, paneId, Modifier.width(340.dp).padding(start = 4.dp, end = 12.dp, top = 8.dp, bottom = 12.dp))
+        if (side && route is Route.Library && paneId != null) Surface(Modifier.width(400.dp).fillMaxHeight().padding(end = 12.dp, top = 8.dp, bottom = 12.dp), shape = RoundedCornerShape(28.dp), color = Atlas.Background,
+            border = androidx.compose.foundation.BorderStroke(1.dp, Atlas.Border)) { CompositionLocalProvider(com.jmr.atlas.ui.cards.LocalInPane provides true) { DetailScreen(vm, snap, paneId) } }
+    }
+}
+
+@Composable
+private fun Rail(vm: AtlasViewModel, snap: Snapshot, route: Route) {
+    Column(Modifier.width(92.dp).fillMaxHeight().padding(vertical = 8.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+        AtlasMark(32.dp); Spacer(Modifier.height(18.dp))
         FloatingActionButton({ vm.show(Overlay.Capture) }, shape = CircleShape, containerColor = Atlas.Primary, contentColor = Color.White,
-            modifier = Modifier.size(56.dp).testTag("capture_fab").semantics { contentDescription = "Capture" }) { Icon(Icons.Outlined.Add, null) }
-        Text("Capture", style = MaterialTheme.typography.labelSmall, color = Atlas.SecondaryText, modifier = Modifier.padding(top = 4.dp))
+            modifier = Modifier.size(60.dp).testTag("capture_fab").semantics { contentDescription = "Capture" }) { Icon(Icons.Outlined.Add, null) }
+        Spacer(Modifier.height(18.dp))
+        DESTS.forEach { d -> RailItem(d, route.dest() == d.route || (d.route == Route.Library() && route is Route.Library)) { vm.top(d.route) } }
+        Spacer(Modifier.weight(1f))
+        BadgeIcon(snap.pending().size, Icons.Outlined.Inbox, "To review", { vm.go(Route.Review) }, Modifier.testTag("bell"))
+        IconButton({ vm.go(Route.Settings) }, Modifier.semantics { contentDescription = "Settings" }) { Icon(Icons.Outlined.Settings, null) }
+    }
+}
+
+@Composable
+private fun RailItem(d: Dest, on: Boolean, onClick: () -> Unit) {
+    Column(Modifier.padding(vertical = 4.dp).width(80.dp).selectable(on, role = Role.Tab, onClick = onClick).padding(vertical = 4.dp).testTag("nav_${d.label}"), horizontalAlignment = Alignment.CenterHorizontally) {
+        Box(Modifier.size(width = 60.dp, height = 34.dp).clip(CircleShape).background(if (on) Atlas.PrimaryContainer else Color.Transparent), contentAlignment = Alignment.Center) {
+            Icon(d.icon, null, tint = if (on) Atlas.DeepPlum else Atlas.SecondaryText)
+        }
+        Text(d.label, style = MaterialTheme.typography.labelMedium, color = if (on) Atlas.DeepPlum else Atlas.SecondaryText, maxLines = 1)
     }
 }
 
 // ============================================================ compact: phone and Fold cover screen
 @Composable
 private fun Compact(vm: AtlasViewModel, snap: Snapshot, route: Route, focus: String?, mapView: MapView, narrow: Boolean) {
-    val drawer = rememberDrawerState(DrawerValue.Closed)
-    val scope = rememberCoroutineScope()
-    ModalNavigationDrawer(drawerState = drawer, gesturesEnabled = drawer.isOpen, drawerContent = {
-        ModalDrawerSheet(drawerContainerColor = Atlas.Surface, modifier = Modifier.testTag("drawer")) {
-            Box(Modifier.padding(16.dp)) { AtlasWordmark() }
-            DESTS.forEach { d ->
-                NavigationDrawerItem({ Text(d.label) }, route == d.route, { vm.top(d.route); scope.launch { drawer.close() } }, icon = { Icon(d.icon, null) },
-                    modifier = Modifier.padding(horizontal = 12.dp).testTag("nav_${d.label}"), colors = NavigationDrawerItemDefaults.colors(selectedContainerColor = Atlas.PrimaryContainer))
+    Column(Modifier.fillMaxSize()) {
+        Box(Modifier.weight(1f)) {
+            when (route) {
+                Route.Universe -> Column(Modifier.fillMaxSize()) { MapBar(vm, snap, focus, mapView, showExample = !narrow); Box(Modifier.weight(1f)) { SheetMap(vm, snap, focus, mapView, phone = true, peek = 220.dp) } }
+                else -> RouteContent(vm, snap, route)
             }
-            HorizontalDivider(Modifier.padding(16.dp), color = Atlas.Border)
-            NavigationDrawerItem({ Text("Review") }, false, { vm.go(Route.Review); scope.launch { drawer.close() } }, icon = { Icon(Icons.Outlined.Inbox, null) },
-                badge = { if (snap.pending().isNotEmpty()) Text("${snap.pending().size}") }, modifier = Modifier.padding(horizontal = 12.dp))
-            NavigationDrawerItem({ Text("Settings") }, false, { vm.go(Route.Settings); scope.launch { drawer.close() } }, icon = { Icon(Icons.Outlined.Settings, null) },
-                modifier = Modifier.padding(horizontal = 12.dp).testTag("nav_Settings"))
         }
-    }) {
-        Column(Modifier.fillMaxSize()) {
-            if (route.isTop()) Row(Modifier.fillMaxWidth().height(56.dp).padding(start = 4.dp, end = 4.dp), verticalAlignment = Alignment.CenterVertically) {
-                IconButton({ scope.launch { drawer.open() } }, Modifier.testTag("menu").semantics { contentDescription = "Menu" }) { Icon(Icons.Outlined.Menu, null, tint = Atlas.DeepPlum) }
-                AtlasWordmark()
-                Spacer(Modifier.weight(1f))
-                FilledTonalIconButton({ vm.show(Overlay.Capture) }, colors = IconButtonDefaults.filledTonalIconButtonColors(containerColor = Atlas.Primary, contentColor = Color.White),
-                    modifier = Modifier.testTag("capture_fab").semantics { contentDescription = "Capture" }) { Icon(Icons.Outlined.Add, null) }
-                IconButton({ vm.search("") }, Modifier.semantics { contentDescription = "Search" }) { Icon(Icons.Outlined.Search, null) }
-                BadgeIcon(snap.pending().size, Icons.Outlined.Notifications, "Review", { vm.go(Route.Review) }, Modifier.testTag("bell"))
-            }
-            if (route == Route.Universe) Row(Modifier.fillMaxWidth().padding(horizontal = 8.dp).heightIn(min = 48.dp), verticalAlignment = Alignment.CenterVertically) {
-                MapControls(vm, snap, focus, mapView, showExample = !narrow)
-            }
-            Box(Modifier.weight(1f)) {
-                when (route) {
-                    Route.Universe -> SheetMap(vm, snap, focus, mapView, phone = true, peek = 236.dp)
-                    else -> {
-                        RouteContent(vm, snap, route)
-                        NewFab(vm, route, Modifier.align(Alignment.BottomEnd).padding(20.dp))
-                    }
+        if (route.top) BottomBar(vm, route)
+    }
+}
+
+@Composable
+private fun BottomBar(vm: AtlasViewModel, route: Route) {
+    Surface(color = Atlas.Background, shadowElevation = 0.dp, modifier = Modifier.fillMaxWidth()) {
+        Column {
+            HorizontalDivider(color = Atlas.Border)
+            Row(Modifier.fillMaxWidth().height(80.dp), verticalAlignment = Alignment.CenterVertically) {
+                DESTS.take(2).forEach { d -> BarItem(d, route.dest() == d.route) { vm.top(d.route) } }
+                Box(Modifier.weight(1f), contentAlignment = Alignment.Center) {
+                    FloatingActionButton({ vm.show(Overlay.Capture) }, shape = CircleShape, containerColor = Atlas.Primary, contentColor = Color.White,
+                        modifier = Modifier.size(64.dp).testTag("capture_fab").semantics { contentDescription = "Capture" }) { Icon(Icons.Outlined.Add, null, Modifier.size(30.dp)) }
                 }
+                DESTS.drop(2).forEach { d -> BarItem(d, route.dest() == d.route || (d.route == Route.Library() && route is Route.Library)) { vm.top(d.route) } }
             }
         }
+    }
+}
+
+@Composable
+private fun RowScope.BarItem(d: Dest, on: Boolean, onClick: () -> Unit) {
+    Column(Modifier.weight(1f).fillMaxHeight().selectable(on, role = Role.Tab, onClick = onClick).testTag("nav_${d.label}"), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Center) {
+        Box(Modifier.size(width = 56.dp, height = 32.dp).clip(CircleShape).background(if (on) Atlas.PrimaryContainer else Color.Transparent), contentAlignment = Alignment.Center) {
+            Icon(d.icon, null, tint = if (on) Atlas.DeepPlum else Atlas.SecondaryText)
+        }
+        Spacer(Modifier.height(4.dp))
+        Text(d.label, style = MaterialTheme.typography.labelMedium, color = if (on) Atlas.DeepPlum else Atlas.SecondaryText, maxLines = 1)
     }
 }

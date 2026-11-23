@@ -73,10 +73,14 @@ class DataTest {
         assertEquals(j, repo.search("contractor").exact.first().id)
     }
 
-    @Test fun appCannotUseTheNetwork() {
+    @Test fun networkIsHttpsOnlyAndNeverPrivate() {
+        // 0.5 uses the internet only for pages you save and the model download — HTTPS only, never your local network.
+        assertThrows(IllegalArgumentException::class.java) { com.jmr.atlas.integrations.Web.fetch("https://192.168.1.1/admin", true) }
+        assertThrows(IllegalArgumentException::class.java) { com.jmr.atlas.integrations.Web.fetch("https://127.0.0.1/", true) }
+        assertFalse(com.jmr.atlas.integrations.Web.isPublic("10.0.0.5")); assertFalse(com.jmr.atlas.integrations.Web.isPublic("100.101.102.103")); assertFalse(com.jmr.atlas.integrations.Web.isPublic("169.254.1.1"))
         val ctx = ApplicationProvider.getApplicationContext<android.content.Context>()
         val perms = ctx.packageManager.getPackageInfo(ctx.packageName, android.content.pm.PackageManager.GET_PERMISSIONS).requestedPermissions.orEmpty().toList()
-        assertFalse(perms.toString(), "android.permission.INTERNET" in perms)
+        assertFalse("no SMS / call log / location access", perms.any { it.contains("SMS") || it.contains("CALL_LOG") || it.contains("LOCATION") })
     }
 
     @Test fun exportContainsEverythingButFileBytes() {

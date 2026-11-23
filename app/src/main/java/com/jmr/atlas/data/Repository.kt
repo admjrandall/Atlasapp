@@ -14,11 +14,13 @@ import java.time.LocalDate
  * Single source of truth. Every mutation is one SQLite transaction followed by a fresh immutable Snapshot.
  * Thread-safe: writes are serialized on this object.
  */
-class Repository(context: Context, dbName: String? = "atlas.db") {
+class Repository(context: Context, dbName: String? = "atlas.db", encrypted: Boolean = dbName != null) {
     private val app = context.applicationContext
-    val db = AtlasDb(app, dbName)
+    val db = if (encrypted && dbName != null) AtlasDb(app, dbName, DbCrypto.factory(app, dbName)) else AtlasDb(app, dbName)
+    val encrypted = encrypted && dbName != null
     val files = SecureFiles(app)
     private val prefs = app.getSharedPreferences(if (dbName == null) "atlas_mem" else "atlas", Context.MODE_PRIVATE)
+    val settings = Settings(prefs)
 
     private val _state = MutableStateFlow(db.loadAll())
     val state: StateFlow<Snapshot> = _state.asStateFlow()
@@ -30,12 +32,12 @@ class Repository(context: Context, dbName: String? = "atlas.db") {
 
     private fun refresh() { _state.value = db.loadAll() }
 
-    @Synchronized private fun <T> write(block: AtlasDb.(android.database.sqlite.SQLiteDatabase) -> T): T {
+    @Synchronized private fun <T> write(block: AtlasDb.(androidx.sqlite.db.SupportSQLiteDatabase) -> T): T {
         val r = db.tx { db.block(this) }
         refresh(); return r
     }
 
-    private fun AtlasDb.log(d: android.database.sqlite.SQLiteDatabase, objectId: String, kind: String, text: String) =
+    private fun AtlasDb.log(d: androidx.sqlite.db.SupportSQLiteDatabase, objectId: String, kind: String, text: String) =
         with(d) { putActivity(Activity(objectId = objectId, kind = kind, text = text)) }
 
     // ================================================================ objects
@@ -59,11 +61,22 @@ class Repository(context: Context, dbName: String? = "atlas.db") {
         log(d, o.id, "edited", what)
     }
 
-    fun toggleDone(id: String) {
+    /** Completing a repeating task rolls it to its next date instead of closing it. */
+    fun toggleDone(id: String, today: LocalDate = LocalDate.now()) {
         val t = snap.objects[id] ?: return
         val done = !t.done
+        if (done && t.repeat != Repeat.NONE) {
+            val base = t.due ?: t.deadline ?: today
+            val next = nextDate(base, t.repeat, today)
+            val shift = java.time.temporal.ChronoUnit.DAYS.between(base, next)
+            update(t.copy(due = t.due?.plusDays(shift), deadline = t.deadline?.plusDays(shift), remindAt = t.remindAt?.plus(shift * 86_400_000L)),
+                "Completed · next ${next}")
+            return
+        }
         update(t.copy(done = done, completedAt = if (done) System.currentTimeMillis() else null), if (done) "Completed" else "Reopened")
     }
+
+    fun complete(id: String) { if (snap.objects[id]?.done == false) toggleDone(id) }
 
     fun trash(id: String) = write { d ->
         snap.objects[id]?.let { with(d) { putObject(it.copy(trashed = true, updated = System.currentTimeMillis())) }; log(d, id, "trashed", "Moved to trash") }
@@ -110,12 +123,12 @@ class Repository(context: Context, dbName: String? = "atlas.db") {
 
     // ================================================================ capture
     /** Step 1 (always first): persist the original text as a Note. Nothing is lost if processing fails. */
-    fun captureText(text: String): String {
+    fun captureText(text: String, from: String = "", voice: Boolean = false): String {
         val clean = text.trim()
         require(clean.isNotEmpty())
-        val note = KObject(type = ObjType.NOTE, title = titleFrom(clean), body = clean)
+        val note = KObject(type = ObjType.NOTE, title = titleFrom(clean), body = clean, kind = if (voice) "Voice note" else "")
         val cap = Capture(text = clean, noteId = note.id)
-        write { d -> with(d) { putObject(note); putCapture(cap) }; log(d, note.id, "created", "Captured") }
+        write { d -> with(d) { putObject(note); putCapture(cap) }; log(d, note.id, "created", when { voice -> "Voice note, transcribed on this phone"; from.isNotBlank() -> "Shared from $from"; else -> "Captured" }) }
         return cap.id
     }
 
@@ -129,10 +142,21 @@ class Repository(context: Context, dbName: String? = "atlas.db") {
         return cap.id
     }
 
+    /** A saved link: the URL becomes a Link item at once; its preview is fetched afterwards (Sync.preview). */
+    fun captureLink(url: String, comment: String = "", from: String = ""): String {
+        val link = KObject(type = ObjType.LINK, title = com.jmr.atlas.integrations.Web.host(url), url = url, body = comment.trim())
+        val cap = Capture(text = comment.trim(), noteId = null, attachmentId = link.id)
+        write { d -> with(d) { putObject(link); putCapture(cap) }; log(d, link.id, "created", if (from.isNotBlank()) "Saved from $from" else "Link saved") }
+        return cap.id
+    }
+
     /** Step 2: attach text read on-device (OCR) to the original. */
     fun setExtracted(objectId: String, text: String) {
         val o = snap.objects[objectId] ?: return
-        update(o.copy(extracted = text.trim()), if (text.isBlank()) "No readable text found" else "Text read on this phone (${text.length} characters)")
+        val f = com.jmr.atlas.capture.Facts.extract(text, objectId)
+        update(o.copy(extracted = text.trim(), docDate = o.docDate ?: f.docDate, kind = o.kind.ifBlank { f.kind }),
+            if (text.isBlank()) "No readable text found" else "Text read on this phone (${text.length} characters)")
+        if (f.facts.isNotEmpty() && snap.detailsOf(objectId, DetailKind.FACT).isEmpty()) replaceDetails(objectId, setOf(DetailKind.FACT), f.facts)
     }
 
     fun markFailed(captureId: String) = write { d -> snap.captures.firstOrNull { it.id == captureId }?.let { with(d) { putCapture(it.copy(status = CaptureStatus.FAILED)) } } }
@@ -153,11 +177,31 @@ class Repository(context: Context, dbName: String? = "atlas.db") {
                 putCapture(cap.copy(status = if (sugs.isEmpty()) CaptureStatus.NOTHING_FOUND else CaptureStatus.READY_FOR_REVIEW))
             }
         }
-        return sugs
+        // Known people and projects connect at once (logged, undoable). Anything new waits in To review.
+        if (settings.autoConnect) sugs.filter { it.kind == SuggestionKind.LINK_EXISTING }.forEach { accept(it.id, auto = true) }
+        return snap.suggestions.filter { it.captureId == captureId }
+    }
+
+    /** Proposals from the on-device model join the capture's review list. They are never auto-accepted. */
+    fun addProposals(captureId: String, proposals: List<Suggestion>) {
+        val cap = snap.captures.firstOrNull { it.id == captureId } ?: return
+        val existing = snap.suggestions.filter { it.captureId == captureId }
+        val fresh = proposals.filter { p -> existing.none { it.title.equals(p.title, true) && it.kind == p.kind } && (p.targetId == null || existing.none { it.targetId == p.targetId }) }
+        if (fresh.isEmpty()) return
+        write { d -> with(d) { fresh.forEach { putSuggestion(it.copy(captureId = captureId)) }; putCapture(cap.copy(status = CaptureStatus.READY_FOR_REVIEW)) } }
+    }
+
+    /** Undo an automatic connection from the Now screen: removes the edge and records the suggestion as rejected. */
+    fun undoAuto(sugId: String) {
+        val s = snap.suggestions.firstOrNull { it.id == sugId } ?: return
+        val cap = snap.captures.firstOrNull { it.id == s.captureId } ?: return
+        val source = cap.noteId ?: cap.attachmentId
+        val rel = snap.relations.firstOrNull { r -> r.origin == Origin.AUTO && ((r.sourceId == source && r.targetId == s.targetId) || (r.targetId == source && r.sourceId == s.targetId)) }
+        write { d -> with(d) { rel?.let { deleteRelation(it.id) }; putSuggestion(s.copy(status = SuggestionStatus.REJECTED)) }; s.targetId?.let { log(d, it, "unlinked", "Undid automatic connection") } }
     }
 
     /** Accepting is transactional: object + every implied relationship, or nothing. Never creates a duplicate person. */
-    fun accept(sugId: String): String? {
+    fun accept(sugId: String, auto: Boolean = false): String? {
         val s = snap.suggestions.firstOrNull { it.id == sugId && it.status == SuggestionStatus.PENDING } ?: return null
         val cap = snap.captures.firstOrNull { it.id == s.captureId } ?: return null
         val sourceId = cap.noteId ?: cap.attachmentId
@@ -170,7 +214,8 @@ class Repository(context: Context, dbName: String? = "atlas.db") {
                 SuggestionKind.NEW_TASK -> KObject(type = ObjType.TASK, title = s.title, due = s.due, origin = Origin.EXTRACTED).also { with(d) { putObject(it) }; log(d, it.id, "created", "Task created from a capture") }.id
                 SuggestionKind.NEW_EVENT -> KObject(type = ObjType.EVENT, title = s.title, eventDate = s.due, origin = Origin.EXTRACTED).also { with(d) { putObject(it) }; log(d, it.id, "created", "Milestone created from a capture") }.id
             }
-            fun rel(a: String?, b: String?, t: RelType) { if (a != null && b != null && a != b) with(d) { putRelation(Relation(sourceId = a, targetId = b, type = t, origin = Origin.EXTRACTED, evidence = ev)) } }
+            val relOrigin = if (auto) Origin.AUTO else Origin.EXTRACTED
+            fun rel(a: String?, b: String?, t: RelType) { if (a != null && b != null && a != b) with(d) { putRelation(Relation(sourceId = a, targetId = b, type = t, origin = relOrigin, evidence = ev)) } }
             when (s.kind) {
                 SuggestionKind.NEW_TASK, SuggestionKind.NEW_EVENT -> rel(objId, sourceId, RelType.DERIVED_FROM)
                 else -> rel(sourceId, objId, s.relType)
@@ -190,7 +235,7 @@ class Repository(context: Context, dbName: String? = "atlas.db") {
                 siblings.filter { snap.objects[it.targetId]?.type == ObjType.PERSON && it.kind != SuggestionKind.LINK_EXISTING }.forEach { rel(it.targetId, objId, RelType.RELATED_TO) }
             }
             with(d) { putSuggestion(s.copy(status = SuggestionStatus.ACCEPTED, targetId = objId)) }
-            log(d, objId, "linked", "Accepted from capture: ${s.kind.label.lowercase()}")
+            log(d, objId, "linked", if (auto) "Connected automatically from a capture" else "Accepted from capture: ${s.kind.label.lowercase()}")
             objId
         }
         settle(s.captureId)
@@ -214,6 +259,49 @@ class Repository(context: Context, dbName: String? = "atlas.db") {
         if (all.any { it.status == SuggestionStatus.PENDING }) return
         val cap = snap.captures.firstOrNull { it.id == captureId } ?: return
         write { d -> with(d) { putCapture(cap.copy(status = if (all.any { it.status == SuggestionStatus.ACCEPTED }) CaptureStatus.CONNECTED else CaptureStatus.NOTHING_FOUND)) } }
+    }
+
+    // ================================================================ details, custom fields, updates
+    fun putDetail(dt: Detail, note: String? = null) = write { d -> with(d) { putDetail(dt) }; note?.let { log(d, dt.objectId, "edited", it) } }
+    fun deleteDetail(id: String) = write { d -> snap.details.firstOrNull { it.id == id }?.let { with(d) { deleteDetail(id) } } }
+
+    /** Replaces all details of the given kinds for one object (used by editors and contact sync) in one transaction. */
+    fun replaceDetails(objectId: String, kinds: Set<DetailKind>, list: List<Detail>, note: String? = null) = write { d ->
+        with(d) {
+            snap.details.filter { it.objectId == objectId && it.kind in kinds }.forEach { deleteDetail(it.id) }
+            list.forEachIndexed { i, x -> putDetail(x.copy(objectId = objectId, sort = i)) }
+        }
+        note?.let { log(d, objectId, "edited", it) }
+    }
+
+    fun toggleStep(id: String) {
+        val st = snap.details.firstOrNull { it.id == id } ?: return
+        putDetail(st.copy(flag = !st.flag, extra = if (!st.flag) LocalDate.now().toString() else ""), if (!st.flag) "Step done: ${st.value}" else null)
+    }
+
+    fun postUpdate(projectId: String, text: String, health: Health) {
+        val p = snap.objects[projectId] ?: return
+        write { d ->
+            with(d) {
+                putDetail(Detail(objectId = projectId, kind = DetailKind.UPDATE, value = text.trim(), extra = health.name))
+                putObject(p.copy(health = health, updated = System.currentTimeMillis()))
+            }
+            log(d, projectId, "update", "Posted an update · ${health.label}")
+        }
+    }
+
+    fun addFieldDef(f: FieldDef) = write { d -> with(d) { putFieldDef(f.copy(sort = snap.fieldDefs.count { it.objType == f.objType })) } }
+    fun deleteFieldDef(id: String) = write { d -> with(d) {
+        deleteFieldDef(id)
+        snap.details.filter { it.kind == DetailKind.CUSTOM && it.extra == id && it.value.isBlank() }.forEach { deleteDetail(it.id) }
+    } }
+
+    /** Custom fields for an item: its own values plus empty slots for type-wide definitions it hasn't filled yet. */
+    fun fieldsFor(o: KObject): List<Detail> {
+        val own = snap.detailsOf(o.id, DetailKind.CUSTOM)
+        val defs = snap.fieldDefs.filter { it.objType == o.type && own.none { d -> d.extra == it.id } }
+            .map { Detail(objectId = o.id, kind = DetailKind.CUSTOM, label = it.label, type = it.type, flag = it.secret, extra = it.id) }
+        return own + defs
     }
 
     // ================================================================ search
@@ -330,14 +418,26 @@ class Repository(context: Context, dbName: String? = "atlas.db") {
             o.eventDate?.let { put("date", it.toString()) }
         }
         return JSONObject().apply {
-            put("format", "atlas-export"); put("version", 1); put("exported", System.currentTimeMillis())
+            put("format", "atlas-export"); put("version", 2); put("exported", System.currentTimeMillis())
             put("objects", JSONArray(s.objects.values.map(::o2j)))
             put("relationships", JSONArray(s.relations.map { r -> JSONObject().apply { put("source", r.sourceId); put("target", r.targetId); put("type", r.type.name); put("review", r.review.name); put("origin", r.origin.name); put("evidence", r.evidence) } }))
+            put("details", JSONArray(s.details.map { x -> JSONObject().apply { put("object", x.objectId); put("kind", x.kind.name); put("label", x.label); put("value", x.value); put("type", x.type.name); put("flag", x.flag); put("extra", x.extra) } }))
+            put("fieldDefinitions", JSONArray(s.fieldDefs.map { f -> JSONObject().apply { put("objectType", f.objType.name); put("label", f.label); put("type", f.type.name); put("secret", f.secret) } }))
             put("captures", JSONArray(s.captures.map { c -> JSONObject().apply { put("id", c.id); put("text", c.text); put("created", c.created); put("status", c.status.name) } }))
         }.toString(2)
     }
 
     companion object {
+        fun nextDate(from: LocalDate, r: Repeat, today: LocalDate): LocalDate {
+            if (r == Repeat.NONE) return from
+            fun step(d: LocalDate): LocalDate = when (r) {
+                Repeat.DAILY -> d.plusDays(1); Repeat.WEEKLY -> d.plusWeeks(1); Repeat.MONTHLY -> d.plusMonths(1); Repeat.YEARLY -> d.plusYears(1)
+                Repeat.WEEKDAYS -> { var x = d.plusDays(1); while (x.dayOfWeek.value >= 6) x = x.plusDays(1); x }
+                Repeat.NONE -> d
+            }
+            var n = step(from); while (n.isBefore(today) || n == from) n = step(n)
+            return n
+        }
         fun titleFrom(text: String): String {
             val line = text.lineSequence().first().trim()
             val sentence = line.split(Regex("(?<=[.!?])\\s")).first()
