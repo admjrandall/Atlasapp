@@ -17,12 +17,14 @@ object Sentence {
      */
     enum class Kind(val label: String, val type: ObjType) {
         TASK("Task", ObjType.TASK), NOTE("Note", ObjType.NOTE), IDEA("Idea", ObjType.IDEA),
-        STEP("Step", ObjType.TASK), REMEMBER("Remember", ObjType.NOTE), UPDATE("Update", ObjType.NOTE);
+        STEP("Step", ObjType.TASK), REMEMBER("Remember", ObjType.NOTE), UPDATE("Update", ObjType.NOTE),
+        /** "New space Ankle Surgery": makes a space (a project) to put things in. */
+        SPACE("Space", ObjType.PROJECT);
         val addsToContext get() = this == STEP || this == REMEMBER || this == UPDATE
     }
 
     /** The kinds on offer for a line typed while looking at [context]: new items always, plus what that item can hold. */
-    fun kindsFor(context: KObject?): List<Kind> = listOf(Kind.TASK, Kind.NOTE, Kind.IDEA) + when (context?.type) {
+    fun kindsFor(context: KObject?): List<Kind> = listOf(Kind.TASK, Kind.NOTE, Kind.IDEA, Kind.SPACE) + when (context?.type) {
         ObjType.TASK -> listOf(Kind.STEP); ObjType.PERSON -> listOf(Kind.REMEMBER); ObjType.PROJECT -> listOf(Kind.UPDATE); else -> emptyList()
     }
 
@@ -38,7 +40,28 @@ object Sentence {
         val people: List<KObject>,
         /** Items named with @ ("@estimate", "@Kitchen layout") — linked when saved. */
         val mentions: List<KObject> = emptyList(),
+        /** Where you said to put it ("add to Ankle Surgery", "@Ankle Surgery") when that already exists. */
+        val target: KObject? = null,
+        /** …and when it doesn't: a space by this name is made when you send. */
+        val newSpace: String? = null,
     )
+
+    private const val THIS = "(?:\\s+(?:this|it|these|them|that))?"
+    /** "add to X", "add this to X", "put it in X", "file under X", "save to X" — at the end of the line. */
+    private val ADD_TO = Regex("(?:^|[\\s,;.-]+)(?:add$THIS\\s+to|put$THIS\\s+in(?:to)?|file$THIS\\s+(?:under|in)|save$THIS\\s+(?:to|in))\\s+(?:the\\s+|my\\s+)?([\\p{L}\\p{N}][\\p{L}\\p{N}'&\\- ]{0,48})[.!]?$", RegexOption.IGNORE_CASE)
+    /** "new space Ankle Surgery", "create a group called Ankle Surgery", "new project: Ankle Surgery". */
+    private val NEW_SPACE = Regex("^(?:new|create|make|start)\\s+(?:a\\s+)?(?:new\\s+)?(?:space|group|project|folder)\\s*(?:called|named|for|:)?\\s*(.+)$", RegexOption.IGNORE_CASE)
+
+    /** A name as people write it: "ankle surgery" → "Ankle Surgery"; anything already capitalised is left alone. */
+    fun nameCase(t: String): String = t.trim().let { n -> if (n == n.lowercase()) n.split(Regex("\\s+")).joinToString(" ") { w -> if (w.length <= 2 && w in setOf("of", "on", "in", "to", "at", "an", "a")) w else w.replaceFirstChar { it.uppercase() } }.replaceFirstChar { it.uppercase() } else n }
+
+    /** An existing item called [name]: same title first, then a project or person whose title contains it. */
+    fun find(name: String, s: Snapshot): KObject? {
+        val n = name.trim(); if (n.length < 2) return null
+        val live = s.live.filter { it.type != ObjType.COLLECTION }
+        return live.firstOrNull { it.title.equals(n, true) }
+            ?: live.filter { (it.type == ObjType.PROJECT || it.type == ObjType.PERSON) && it.title.contains(n, true) }.maxByOrNull { it.updated }
+    }
 
     private val MENTION = Regex("@([\\p{L}\\p{N}][\\p{L}\\p{N}'-]*(?:\\s+[\\p{L}\\p{N}][\\p{L}\\p{N}'-]*){0,3})")
 
@@ -120,12 +143,39 @@ object Sentence {
 
     fun parse(text: String, s: Snapshot, today: LocalDate = LocalDate.now(), currentSpace: String? = null): Parsed {
         val raw = text.trim()
-        val ments = mentions(raw, s)
-        val q = isQuestion(raw)
-        val ppl = people(raw, s)
-        val sp = space(raw, s, ppl, currentSpace)
-        val dt = if (q) null else date(raw, today)
-        var title = raw
+        NEW_SPACE.find(raw)?.let { m ->
+            val name = nameCase(m.groupValues[1].trim().trim('"', '“', '”', '.', ':'))
+            if (name.isNotBlank()) return Parsed(raw, false, Kind.SPACE, name.take(80), null, null, null, people(raw, s).filter { !name.contains(it.title, true) },
+                target = find(name, s)?.takeIf { it.type == ObjType.PROJECT && it.title.equals(name, true) })
+        }
+        // where you said to put it — taken out of the line before anything else reads it
+        var body = raw
+        var target: KObject? = null; var newSpace: String? = null
+        ADD_TO.find(body)?.let { m ->
+            val name = m.groupValues[1].trim().trimEnd('.', ',', '!')
+            if (name.split(Regex("\\s+")).size <= 6) {
+                target = find(name, s); if (target == null) newSpace = nameCase(name)
+                body = body.removeRange(m.range).trim()
+            }
+        }
+        // "@Ankle Surgery" for something that isn't in Atlas yet: the capitalised words after @ (or the one word)
+        val resolved = mentions(body, s).map { it.first }
+        MENTION.findAll(body).firstOrNull { m -> resolved.none { r -> m.value.startsWith(r) } }?.let { m ->
+            if (target == null && newSpace == null) {
+                val ws = m.groupValues[1].split(Regex("\\s+"))
+                val run = if (ws[0].first().isUpperCase()) ws.takeWhile { it.first().isUpperCase() } else ws.take(1)
+                val token = "@" + run.joinToString(" ")
+                newSpace = nameCase(run.joinToString(" "))
+                body = body.replace(token, " ").replace(Regex("\\s{2,}"), " ").trim()
+            }
+        }
+        val explicit = target != null || newSpace != null
+        val ments = mentions(body, s)
+        val q = !explicit && isQuestion(body)
+        val ppl = people(body, s)
+        val sp = (target as KObject?)?.takeIf { it.type == ObjType.PROJECT } ?: if (explicit) null else space(body, s, ppl, currentSpace)
+        val dt = if (q) null else date(body, today)
+        var title = body
         dt?.let { title = title.replace(it.first, " ") }
         ments.forEach { (token, o) -> title = title.replace(token, if (o.type == ObjType.PERSON) o.firstName else " ") }
         // trailing "for the kitchen" / "for Home Renovation" just says where it goes
@@ -140,11 +190,13 @@ object Sentence {
             else -> Kind.NOTE
         }
         if (kind == Kind.IDEA) title = title.replace(idea, "")
-        title = title.replaceFirstChar { it.uppercase() }.ifBlank { raw }
+        title = title.replaceFirstChar { it.uppercase() }.ifBlank { if (explicit) "" else raw }
         val mentioned = ments.map { it.second }.distinctBy { it.id }
-        return Parsed(raw, q, kind, title.take(160), dt?.second, dt?.first?.trim(),
-            sp ?: mentioned.firstOrNull { it.type == ObjType.PROJECT }, (ppl + mentioned.filter { it.type == ObjType.PERSON }).distinctBy { it.id },
-            mentioned.filter { it.type != ObjType.PERSON && it.type != ObjType.PROJECT })
+        val tgt = target as KObject?
+        return Parsed(raw, q, if (title.isBlank() && newSpace != null) Kind.SPACE else kind, if (title.isBlank() && newSpace != null) newSpace!! else title.take(160), dt?.second, dt?.first?.trim(),
+            sp ?: mentioned.firstOrNull { it.type == ObjType.PROJECT }, (ppl + mentioned.filter { it.type == ObjType.PERSON } + listOfNotNull(tgt?.takeIf { it.type == ObjType.PERSON })).distinctBy { it.id },
+            (mentioned + listOfNotNull(tgt)).filter { it.type != ObjType.PERSON && it.type != ObjType.PROJECT }.distinctBy { it.id },
+            target = tgt, newSpace = if (title.isBlank()) null else newSpace)
     }
 
     /** Words worth searching for in a question ("what could delay demolition?" → "delay demolition"). */

@@ -9,6 +9,8 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.ui.draw.drawBehind
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.input.TextFieldLineLimits
 import androidx.compose.foundation.text.BasicTextField
@@ -91,6 +93,8 @@ fun CatchSheet(vm: AtlasViewModel, snap: Snapshot) {
     val extra by vm.extraLinks.collectAsState()
     val attach by vm.attachOpen.collectAsState()
     val ask by vm.ask.collectAsState()
+    val files by vm.attachments.collectAsState()
+    val newLinks by vm.newLinks.collectAsState()
     val parsed = remember(text, snap, ctxId) { if (text.isBlank()) null else vm.parsed(text) }
     var picking by remember { mutableStateOf(false) }
     val focus = remember { FocusRequester() }
@@ -104,13 +108,20 @@ fun CatchSheet(vm: AtlasViewModel, snap: Snapshot) {
                 picking -> LinkPicker(vm, snap, exclude = setOfNotNull(ctxId) + extra) { picking = false }
                 ask is AskState.Thinking -> Bubble("Looking through your things…")
                 ask is AskState.Answer -> AnswerCard(vm, snap, ask as AskState.Answer)
+                parsed == null && files.isNotEmpty() ->
+                    if (newLinks.isNotEmpty() || extra.isNotEmpty()) Preview(vm, snap, vm.parsed("x").copy(raw = "", title = "", space = null, people = emptyList(), mentions = emptyList(), target = null, newSpace = null), Sentence.Kind.NOTE, ctx, extra, newLinks, dropped, dueOff, files.size) { picking = true }
+                    else Column(Modifier.fillMaxWidth().shadow(12.dp, RoundedCornerShape(26.dp)).clip(RoundedCornerShape(26.dp)).background(Atlas.Background).padding(horizontal = 20.dp, vertical = 18.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                        val it_ = if (files.size == 1) "it" else "them"
+                        Text(if (ctx != null) "Send to add $it_ to ${ctx.title}, or type where $it_ should go." else "Type where $it_ should go — “Add to Ankle Surgery” makes the space if it’s new — or just send.", style = T.meta.copy(fontSize = 15.sp), color = Atlas.DeepPlum)
+                        LinkButton { picking = true }
+                    }
                 parsed == null && attach -> {}
                 parsed == null -> Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
                     if (ctx != null) Bubble("Adding to ${ctx.title}")
                     Examples(vm, ctx)
                 }
-                parsed.question -> Bubble("Sounds like a question. Send to ask.")
-                else -> Preview(vm, snap, parsed, vm.kindOf(parsed), ctx, extra, dropped, dueOff) { picking = true }
+                parsed.question && files.isEmpty() -> Bubble("Sounds like a question. Send to ask.")
+                else -> Preview(vm, snap, parsed, vm.kindOf(parsed), ctx, extra, newLinks, dropped, dueOff, files.size) { picking = true }
             }
             AnimatedVisibility(attach, enter = fadeIn(), exit = fadeOut()) {
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -119,6 +130,9 @@ fun CatchSheet(vm: AtlasViewModel, snap: Snapshot) {
                     Chip("File", Icons.Outlined.AttachFile) { vm.attachOpen.value = false; platform.pickFile() }
                     platform.clipboardUrl()?.let { url -> Chip("Paste link", Icons.Outlined.Link) { vm.attachOpen.value = false; vm.closeCatch(); vm.captureLink(url) } }
                 }
+            }
+            if (files.isNotEmpty()) Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).testTag("attachments"), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                files.forEach { f -> Attachment(f) { vm.removeAttachment(f.id) } }
             }
             Row(Modifier.fillMaxWidth().shadow(18.dp, RoundedCornerShape(30.dp)).clip(RoundedCornerShape(30.dp)).background(Atlas.Surface).border(1.5.dp, Atlas.Orchid, RoundedCornerShape(30.dp)).padding(8.dp),
                 verticalAlignment = Alignment.Bottom) {
@@ -130,7 +144,7 @@ fun CatchSheet(vm: AtlasViewModel, snap: Snapshot) {
                         onKeyboardAction = { vm.send() }, lineLimits = TextFieldLineLimits.MultiLine(1, 5))
                 }
                 CircleButton(Icons.Outlined.Mic, "Talk") { platform.dictate { t -> vm.setCatch((vm.catchText.trimEnd() + " " + t).trim()) } }
-                CircleButton(Icons.Outlined.ArrowUpward, if (parsed?.question == true) "Ask" else "Save", filled = text.isNotBlank(), enabled = text.isNotBlank()) { vm.send() }
+                CircleButton(Icons.Outlined.ArrowUpward, if (parsed?.question == true) "Ask" else "Save", filled = text.isNotBlank() || files.isNotEmpty(), enabled = text.isNotBlank() || files.isNotEmpty()) { vm.send() }
             }
         }
     }
@@ -165,20 +179,35 @@ private fun Examples(vm: AtlasViewModel, ctx: KObject?) {
 
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
-private fun Preview(vm: AtlasViewModel, s: Snapshot, p: Sentence.Parsed, kind: Sentence.Kind, ctx: KObject?, extra: List<String>, dropped: Set<String>, dueOff: Boolean, onLink: () -> Unit) {
+private fun Preview(vm: AtlasViewModel, s: Snapshot, p: Sentence.Parsed, kind: Sentence.Kind, ctx: KObject?, extra: List<String>, newLinks: List<String>, dropped: Set<String>, dueOff: Boolean, files: Int, onLink: () -> Unit) {
+    val asSpace = kind == Sentence.Kind.SPACE && files == 0
     Column(Modifier.fillMaxWidth().shadow(12.dp, RoundedCornerShape(26.dp)).clip(RoundedCornerShape(26.dp)).background(Atlas.Background).padding(horizontal = 20.dp, vertical = 18.dp).testTag("catch_preview"),
         verticalArrangement = Arrangement.spacedBy(12.dp)) {
-        AtlasDid(if (kind.addsToContext) "Atlas will add this — tap a part to change it" else "Atlas will save this as — tap a part to change it")
+        AtlasDid(when {
+            files > 0 -> "Atlas will save ${if (files == 1) "it" else "them"} — tap a part to change it"
+            asSpace && p.target != null -> "${p.target.title} already exists — send to open it"
+            asSpace -> "Atlas will make a new space — tap a part to change it"
+            kind.addsToContext -> "Atlas will add this — tap a part to change it"
+            else -> "Atlas will save this as — tap a part to change it" })
         FlowRow(horizontalArrangement = Arrangement.spacedBy(10.dp), verticalArrangement = Arrangement.spacedBy(8.dp), itemVerticalAlignment = Alignment.CenterVertically) {
             val (kc, ki) = when (kind) {
                 Sentence.Kind.TASK, Sentence.Kind.STEP -> Atlas.CoolMint to Atlas.DeepTeal
                 Sentence.Kind.IDEA -> Atlas.Peach to Atlas.CoralText
                 Sentence.Kind.REMEMBER, Sentence.Kind.UPDATE -> Atlas.PrimaryContainer to Atlas.Primary
                 Sentence.Kind.NOTE -> Atlas.PowderBlue to Atlas.BlueText
+                Sentence.Kind.SPACE -> Atlas.PrimaryContainer to Atlas.Primary
             }
-            Box(Modifier.heightIn(min = 38.dp).clip(RoundedCornerShape(12.dp)).background(kc).clickable(role = Role.Button, onClickLabel = "Change type") { vm.cycleKind(kind) }.padding(horizontal = 12.dp).testTag("kind_chip"),
+            if (files > 0) Box(Modifier.heightIn(min = 38.dp).clip(RoundedCornerShape(12.dp)).background(Atlas.PowderBlue).padding(horizontal = 12.dp), contentAlignment = Alignment.Center) {
+                Text(if (files == 1) "1 attachment" else "$files attachments", style = T.tileLabel.copy(fontSize = 14.sp), color = Atlas.BlueText) }
+            else Box(Modifier.heightIn(min = 38.dp).clip(RoundedCornerShape(12.dp)).background(kc).clickable(role = Role.Button, onClickLabel = "Change type") { vm.cycleKind(kind) }.padding(horizontal = 12.dp).testTag("kind_chip"),
                 contentAlignment = Alignment.Center) { Text(kind.label, style = T.tileLabel.copy(fontSize = 14.sp), color = ki) }
-            Text(if (kind == Sentence.Kind.NOTE || kind == Sentence.Kind.UPDATE || kind == Sentence.Kind.REMEMBER) p.raw.replace(Regex("@(?=\\S)"), "") else p.title, style = T.preview.copy(fontWeight = androidx.compose.ui.text.font.FontWeight.SemiBold), color = Atlas.DeepPlum)
+            val shown = when {
+                files > 0 -> if (kind == Sentence.Kind.SPACE) "" else p.title
+                kind == Sentence.Kind.NOTE && (p.target != null || p.newSpace != null) -> p.title
+                kind == Sentence.Kind.NOTE || kind == Sentence.Kind.UPDATE || kind == Sentence.Kind.REMEMBER -> p.raw.replace(Regex("@(?=\\S)"), "")
+                else -> p.title
+            }
+            if (shown.isNotBlank()) Text(shown, style = T.preview.copy(fontWeight = androidx.compose.ui.text.font.FontWeight.SemiBold), color = Atlas.DeepPlum)
             if (kind == Sentence.Kind.TASK && p.due != null) {
                 Word("due")
                 PartChip(com.jmr.atlas.data.Board.whenShort(p.due, java.time.LocalDate.now()).replaceFirstChar { it.uppercase() } + " " + com.jmr.atlas.data.Board.shortDate(p.due), Atlas.PowderBlue, Atlas.BlueText, dueOff,
@@ -188,19 +217,57 @@ private fun Preview(vm: AtlasViewModel, s: Snapshot, p: Sentence.Parsed, kind: S
                 Word(when (kind) { Sentence.Kind.STEP -> "on"; Sentence.Kind.REMEMBER -> "about"; Sentence.Kind.UPDATE -> "for"; else -> "linked to" })
                 PartChip(ctx.title, Atlas.PrimaryContainer, Atlas.Primary, ctx.id in dropped, if (ctx.id in dropped) "Link to ${ctx.title}" else "Don't link to ${ctx.title}") { vm.toggleDrop(ctx.id) }
             }
-            if (!kind.addsToContext) {
+            if (asSpace) {
+                if (p.people.isNotEmpty()) { Word("with"); p.people.forEach { person -> PartChip(person.firstName, Atlas.CoolMint, Atlas.DeepTeal, person.id in dropped, if (person.id in dropped) "Link ${person.title}" else "Don't link ${person.title}") { vm.toggleDrop(person.id) } } }
+            } else if (!kind.addsToContext) {
+                // a space that isn't there yet: shown as a dashed bubble, made when you send
+                val fresh = (listOfNotNull(p.newSpace, p.title.takeIf { files > 0 && kind == Sentence.Kind.SPACE && p.target == null }) + newLinks).distinctBy { it.lowercase() }
+                if (fresh.isNotEmpty()) { Word(if (files > 0) "to" else "in"); fresh.forEach { n -> NewSpaceChip(n, "new:${n.lowercase()}" in dropped, n in newLinks) { if (n in newLinks) vm.removeNewLink(n) else vm.toggleDrop("new:${n.lowercase()}") } } }
+                p.target?.takeIf { it.type == ObjType.PROJECT && it.id != ctx?.id && files > 0 && p.space?.id != it.id }?.let { t -> Word("to"); PartChip(t.title, Atlas.PrimaryContainer, Atlas.Primary, t.id in dropped, if (t.id in dropped) "Put it in ${t.title}" else "Don't put it in ${t.title}") { vm.toggleDrop(t.id) } }
                 p.space?.takeIf { it.id != ctx?.id }?.let { sp -> Word("in"); PartChip(sp.title, Atlas.PrimaryContainer, Atlas.Primary, sp.id in dropped, if (sp.id in dropped) "Put it in ${sp.title}" else "Don't put it in ${sp.title}") { vm.toggleDrop(sp.id) } }
                 val ppl = p.people.filter { it.id != ctx?.id }
                 if (ppl.isNotEmpty()) { Word("with"); ppl.forEach { person -> PartChip(person.firstName, Atlas.CoolMint, Atlas.DeepTeal, person.id in dropped, if (person.id in dropped) "Link ${person.title}" else "Don't link ${person.title}") { vm.toggleDrop(person.id) } } }
                 p.mentions.filter { it.id != ctx?.id }.forEach { m -> PartChip(m.title, Atlas.PowderBlue, Atlas.BlueText, m.id in dropped, if (m.id in dropped) "Link ${m.title}" else "Don't link ${m.title}") { vm.toggleDrop(m.id) } }
                 extra.mapNotNull { s.objects[it] }.forEach { o -> PartChip(o.title + "  ×", Atlas.PowderBlue, Atlas.BlueText, false, "Remove link to ${o.title}") { vm.removeLink(o.id) } }
-                Box(Modifier.heightIn(min = 38.dp).clip(RoundedCornerShape(12.dp)).border(1.5.dp, Atlas.Border, RoundedCornerShape(12.dp)).clickable(role = Role.Button, onClick = onLink).padding(horizontal = 12.dp).testTag("link_to"),
-                    contentAlignment = Alignment.Center) { Text("+ Link to…", style = T.metaStrong.copy(fontSize = 15.sp), color = Atlas.Primary) }
+                LinkButton(onLink)
             }
         }
-        if (!kind.addsToContext && p.space == null && ctx == null && p.people.isEmpty() && extra.isEmpty()) Text("Goes to Today. Say “for the kitchen”, type @ and a name, or tap Link to file it.", style = T.meta, color = Atlas.SecondaryText)
+        if (!kind.addsToContext && !asSpace && files == 0 && p.space == null && p.newSpace == null && p.target == null && newLinks.isEmpty() && ctx == null && p.people.isEmpty() && extra.isEmpty())
+            Text("Goes to Today. Add “add to Ankle Surgery”, type @ and a name, or tap Link to file it — new spaces are made for you.", style = T.meta, color = Atlas.SecondaryText)
     }
 }
+
+@Composable
+private fun LinkButton(onLink: () -> Unit) =
+    Box(Modifier.heightIn(min = 38.dp).clip(RoundedCornerShape(12.dp)).border(1.5.dp, Atlas.Border, RoundedCornerShape(12.dp)).clickable(role = Role.Button, onClick = onLink).padding(horizontal = 12.dp).testTag("link_to"),
+        contentAlignment = Alignment.Center) { Text("+ Link to…", style = T.metaStrong.copy(fontSize = 15.sp), color = Atlas.Primary) }
+
+/** A space that will be made when you send: dashed, with "New space" written on it so it's never a surprise. */
+@Composable
+private fun NewSpaceChip(name: String, off: Boolean, removable: Boolean, onClick: () -> Unit) {
+    val dash = androidx.compose.ui.graphics.PathEffect.dashPathEffect(floatArrayOf(10f, 7f))
+    Row(Modifier.heightIn(min = 38.dp).clip(RoundedCornerShape(12.dp)).background(if (off) Color.Transparent else Atlas.PrimaryContainer.copy(alpha = 0.55f))
+        .drawBehind { drawRoundRect(Atlas.Primary.copy(alpha = if (off) 0.35f else 0.9f), cornerRadius = androidx.compose.ui.geometry.CornerRadius(12.dp.toPx()), style = androidx.compose.ui.graphics.drawscope.Stroke(1.5.dp.toPx(), pathEffect = dash)) }
+        .clickable(role = Role.Button, onClickLabel = if (removable) "Don't make $name" else if (off) "Make the space $name" else "Don't make $name", onClick = onClick)
+        .padding(horizontal = 12.dp).testTag("new_space_chip").semantics(mergeDescendants = true) {}, verticalAlignment = Alignment.CenterVertically) {
+        Text("+ New space", style = T.tileLabel.copy(fontSize = 12.sp), color = Atlas.Primary.copy(alpha = if (off) 0.5f else 1f))
+        Spacer(Modifier.width(8.dp))
+        Text(name + if (removable) "  ×" else "", style = T.metaStrong.copy(fontSize = 15.sp, textDecoration = if (off) androidx.compose.ui.text.style.TextDecoration.LineThrough else null), color = Atlas.Primary.copy(alpha = if (off) 0.5f else 1f))
+    }
+}
+
+/** A photo or file waiting in the input box. */
+@Composable
+private fun Attachment(f: AtlasViewModel.Pending, onRemove: () -> Unit) =
+    Box(Modifier.size(72.dp).shadow(6.dp, RoundedCornerShape(16.dp)).clip(RoundedCornerShape(16.dp)).background(Atlas.Surface)) {
+        if (f.thumb != null) androidx.compose.foundation.Image(f.thumb, f.read.name, Modifier.fillMaxSize(), contentScale = androidx.compose.ui.layout.ContentScale.Crop)
+        else Column(Modifier.fillMaxSize().padding(8.dp), verticalArrangement = Arrangement.SpaceBetween) {
+            Icon(if (f.read.mime == "application/pdf") Icons.Outlined.DocumentScanner else Icons.Outlined.AttachFile, null, Modifier.size(20.dp), tint = Atlas.Primary)
+            Text(f.read.name, style = T.meta.copy(fontSize = 10.sp), color = Atlas.DeepPlum, maxLines = 2, overflow = TextOverflow.Ellipsis)
+        }
+        Box(Modifier.align(Alignment.TopEnd).padding(4.dp).size(24.dp).clip(CircleShape).background(Atlas.DeepPlum.copy(alpha = 0.75f)).clickable(role = Role.Button, onClickLabel = "Remove ${f.read.name}", onClick = onRemove),
+            contentAlignment = Alignment.Center) { Icon(Icons.Outlined.Close, "Remove", Modifier.size(14.dp), tint = Color.White) }
+    }
 
 @Composable
 private fun Word(t: String) = Text(t, style = T.preview, color = Atlas.SecondaryText)
@@ -236,7 +303,17 @@ private fun LinkPicker(vm: AtlasViewModel, s: Snapshot, exclude: Set<String>, on
                         }
                     }
                 }
-                if (list.isEmpty()) Text("Nothing matches.", style = T.meta, color = Atlas.SecondaryText, modifier = Modifier.padding(8.dp))
+                if (q.isNotBlank() && s.live.none { it.title.equals(q.trim(), true) }) {
+                    Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(14.dp)).clickable(role = Role.Button) { vm.addNewLink(q); onDone() }.padding(horizontal = 8.dp, vertical = 8.dp).testTag("create_space"),
+                        verticalAlignment = Alignment.CenterVertically) {
+                        Box(Modifier.size(34.dp).clip(RoundedCornerShape(10.dp)).background(Atlas.PrimaryContainer), contentAlignment = Alignment.Center) { Icon(Icons.Outlined.Add, null, Modifier.size(18.dp), tint = Atlas.Primary) }
+                        Spacer(Modifier.width(12.dp))
+                        Column(Modifier.weight(1f)) {
+                            Text("Create “${Sentence.nameCase(q)}”", style = T.tileTitle.copy(fontSize = 15.sp), color = Atlas.Primary, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                            Text("New space · made when you send", style = T.meta.copy(fontSize = 12.sp), color = Atlas.SecondaryText)
+                        }
+                    }
+                }
             }
         }
     }

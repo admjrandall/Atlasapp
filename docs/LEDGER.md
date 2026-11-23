@@ -2,6 +2,15 @@
 
 Honest status. "Verified" = automated test or inspected screenshot (Robolectric). Nothing has run on a physical Fold 6 yet; items marked **device-only** can only be proven there.
 
+## 0.6.2 — put things in spaces that don't exist yet
+
+| Asked | Done | Test |
+|---|---|---|
+| Add a photo to "Ankle Surgery" when it doesn't exist | Photos, scans and files picked from the input box wait there (thumbnails, ×) until you send; the line says where they go | `photoGoesToANewSpace` |
+| "Add to Ankle Surgery" → bubble if it's not there | "add to / put in / file under / save to X" and `@X` link to X if it exists, else a dashed "+ New space · X" bubble (tap to cross out); made on send, undo removes it | `readsWhereThingsGo`, `lineMakesTheSpaceItNames` |
+| Create groups quickly | "New space Ankle Surgery" / "new group called …" / just "Add to Ankle Surgery"; Space is also in the type cycle | `readsWhereThingsGo` |
+| — | Link to… offers "Create 'X'" when nothing matches | `linkPickerCreatesASpace` |
+
 ## 0.6.1 — input box, toasts, board lines
 
 | Reported | Cause | Fix | Test |

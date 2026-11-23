@@ -23,6 +23,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
 import androidx.compose.foundation.text.input.TextFieldState
+import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.foundation.text.input.clearText
 import androidx.compose.foundation.text.input.setTextAndPlaceCursorAtEnd
 import java.time.LocalDate
@@ -183,6 +184,11 @@ class AtlasViewModel(app: Application, private val saved: SavedStateHandle) : An
     /** Items you picked with "Link to…". */
     val extraLinks = MutableStateFlow<List<String>>(emptyList())
     val attachOpen = MutableStateFlow(false)
+    /** Photos and files waiting in the input box until you send, so a line like "Add to Ankle Surgery" can say where they go. */
+    class Pending(val id: String, val read: com.jmr.atlas.capture.Readers.Read, val thumb: androidx.compose.ui.graphics.ImageBitmap?)
+    val attachments = MutableStateFlow<List<Pending>>(emptyList())
+    /** Spaces you asked for in "Link to…" that don't exist yet; made when you send. */
+    val newLinks = MutableStateFlow<List<String>>(emptyList())
     val ask = MutableStateFlow<AskState>(AskState.Idle)
     private var askJob: Job? = null
     private var lastText = ""
@@ -192,8 +198,29 @@ class AtlasViewModel(app: Application, private val saved: SavedStateHandle) : An
         context.value = (route as? Route.Item)?.id ?: boardSel.value?.takeIf { route is Route.Space }
         resetParts(); attachOpen.value = false; ask.value = AskState.Idle; catchOpen.value = true
     }
-    fun closeCatch() { catchOpen.value = false; askJob?.cancel(); ask.value = AskState.Idle; attachOpen.value = false }
-    private fun resetParts() { kindOverride.value = null; dropped.value = emptySet(); dueOff.value = false; extraLinks.value = emptyList(); lastText = catchText }
+    fun closeCatch() { catchOpen.value = false; askJob?.cancel(); ask.value = AskState.Idle; attachOpen.value = false; attachments.value = emptyList() }
+    private fun resetParts() { kindOverride.value = null; dropped.value = emptySet(); dueOff.value = false; extraLinks.value = emptyList(); newLinks.value = emptyList(); lastText = catchText }
+
+    /** A photo, scan or file picked from the input box waits there; picked from anywhere else it's saved straight away. */
+    fun attachOrCapture(uri: Uri, mimeHint: String? = null) {
+        if (!catchOpen.value) { captureUri(uri, mimeHint); return }
+        val ctx = getApplication<Application>()
+        viewModelScope.launch {
+            val r = withContext(Dispatchers.IO) { com.jmr.atlas.capture.Readers.read(ctx, uri, mimeHint) } ?: run { say("Couldn't read that file."); return@launch }
+            val thumb = if (r.mime.startsWith("image/")) withContext(Dispatchers.IO) {
+                runCatching {
+                    val o = android.graphics.BitmapFactory.Options().apply { inJustDecodeBounds = true }
+                    android.graphics.BitmapFactory.decodeByteArray(r.bytes, 0, r.bytes.size, o)
+                    var n = 1; while (maxOf(o.outWidth, o.outHeight) / (n * 2) >= 160) n *= 2
+                    android.graphics.BitmapFactory.decodeByteArray(r.bytes, 0, r.bytes.size, android.graphics.BitmapFactory.Options().apply { inSampleSize = n })?.asImageBitmap()
+                }.getOrNull()
+            } else null
+            attachments.value = attachments.value + Pending(newId(), r, thumb)
+        }
+    }
+    fun removeAttachment(id: String) { attachments.value = attachments.value.filterNot { it.id == id } }
+    fun addNewLink(name: String) { val n = Sentence.nameCase(name); if (n.isNotBlank() && newLinks.value.none { it.equals(n, true) }) newLinks.value = newLinks.value + n }
+    fun removeNewLink(name: String) { newLinks.value = newLinks.value - name }
     /** Called as you type: a new line forgets the choices you made for the old one and any answer shown. */
     fun textChanged(t: String) {
         if (t == lastText) return
@@ -217,13 +244,54 @@ class AtlasViewModel(app: Application, private val saved: SavedStateHandle) : An
 
     /** The kind a line will be saved as: your choice, else what it reads as — a checklist step when you're on a task. */
     fun kindOf(p: Sentence.Parsed): Sentence.Kind = kindOverride.value
-        ?: if (contextObj?.type == ObjType.TASK && p.due == null && p.kind != Sentence.Kind.IDEA && context.value !in dropped.value) Sentence.Kind.STEP else p.kind
+        ?: if (contextObj?.type == ObjType.TASK && p.due == null && p.kind != Sentence.Kind.IDEA && p.kind != Sentence.Kind.SPACE && p.target == null && p.newSpace == null && context.value !in dropped.value) Sentence.Kind.STEP else p.kind
 
     fun send() {
-        val text = catchText.trim(); if (text.isEmpty()) return
+        val text = catchText.trim()
+        if (attachments.value.isNotEmpty()) { saveFiles(if (text.isEmpty()) null else parsed(text)); return }
+        if (text.isEmpty()) return
         val p = parsed(text)
         if (p.question) { askNow(text); return }
         save(p)
+    }
+
+    /** New spaces this line asks for (typed or picked), unless you crossed them out. */
+    private fun spacesToMake(p: Sentence.Parsed?): List<String> =
+        (listOfNotNull(p?.newSpace, p?.takeIf { it.kind == Sentence.Kind.SPACE && it.target == null && kindOverride.value == null }?.title?.takeIf { attachments.value.isNotEmpty() }) + newLinks.value)
+            .distinctBy { it.lowercase() }.filter { "new:${it.lowercase()}" !in dropped.value }
+
+    private fun makeSpace(name: String): KObject {
+        repo.snap.live.firstOrNull { it.type == ObjType.PROJECT && it.title.equals(name, true) }?.let { return it }
+        val o = KObject(type = ObjType.PROJECT, title = name, projectStatus = ProjectStatus.ACTIVE)
+        repo.create(o, emptyList()); return repo.snap.objects[o.id] ?: o
+    }
+
+    /** Photos/files waiting in the box: saved as originals, linked where the line says (or to what's open), captioned by the rest. */
+    private fun saveFiles(p: Sentence.Parsed?) {
+        val drop = dropped.value
+        val made = spacesToMake(p).map { makeSpace(it) }
+        val ctx = contextObj?.takeIf { it.id !in drop }
+        val links = (made + listOfNotNull(p?.target, ctx, p?.space?.takeIf { it.id !in drop }) + p?.people.orEmpty().filter { it.id !in drop } +
+            p?.mentions.orEmpty().filter { it.id !in drop } + extraLinks.value.mapNotNull { repo.snap.objects[it] }).filter { it.id !in drop }.distinctBy { it.id }
+        val caption = p?.takeIf { it.kind != Sentence.Kind.SPACE }?.title.orEmpty()
+        val files = attachments.value
+        val app = getApplication<Application>()
+        val docs = files.mapNotNull { f ->
+            val capId = runCatching { repo.captureFile(f.read.bytes, f.read.mime, f.read.name, caption) }.getOrNull() ?: return@mapNotNull null
+            val docId = repo.snap.captures.firstOrNull { it.id == capId }?.attachmentId ?: return@mapNotNull null
+            links.forEach { repo.link(docId, it.id, if (it.type == ObjType.PROJECT) RelType.BELONGS_TO else RelType.RELATED_TO) }
+            viewModelScope.launch(Dispatchers.Default) {
+                runCatching { repo.setExtracted(docId, com.jmr.atlas.capture.Readers.text(app, f.read)) }
+                processCapture(capId)
+            }
+            docId
+        }
+        if (docs.isEmpty()) { say("Couldn't save that file."); return }
+        val what = if (docs.size == 1) (if (files[0].read.mime.startsWith("image/")) "Photo" else "File") else "${docs.size} ${if (files.all { it.read.mime.startsWith("image/") }) "photos" else "files"}"
+        val where = links.firstOrNull { it.type == ObjType.PROJECT }?.let { sp -> if (made.any { it.id == sp.id }) "added to ${sp.title} (new space)" else "added to ${sp.title}" }
+            ?: links.firstOrNull()?.let { "linked to ${it.title}" } ?: "saved"
+        closeCatch(); catchField.clearText(); lastText = ""
+        say("$what $where", { docs.forEach { repo.trash(it) }; made.forEach { repo.trash(it.id) } })
     }
 
     private fun relFor(child: ObjType, parent: KObject) = when {
@@ -242,6 +310,15 @@ class AtlasViewModel(app: Application, private val saved: SavedStateHandle) : An
         val links = (listOfNotNull(ctx, space) + people + p.mentions.filter { it.id !in drop } + extraLinks.value.mapNotNull { repo.snap.objects[it] }).distinctBy { it.id }
         val due = if (dueOff.value) null else p.due
         val result: Pair<String, () -> Unit>? = runCatching<Pair<String, () -> Unit>?> {
+            if (kind == Sentence.Kind.SPACE) {
+                if (p.target != null && kindOverride.value == null) { say("${p.target.title} already exists — opening it."); closeCatch(); go(Route.Space("p:${p.target.id}")); return }
+                val sp = makeSpace(p.title)
+                people.forEach { repo.link(it.id, sp.id, RelType.PART_OF) }
+                return@runCatching "New space: ${sp.title}" to { repo.trash(sp.id) }
+            }
+            if (p.title.isBlank()) { say(if (p.target != null) "Type what to add to ${p.target.title}, or attach a photo or file." else "Type something to save."); return }
+            val made = spacesToMake(p).map { makeSpace(it) }
+            val links = (made + links).distinctBy { it.id }
             when {
                 kind.addsToContext && ctx == null -> { say("Open the item you want to add this to, or pick another kind."); null }
                 kind == Sentence.Kind.STEP -> {
@@ -262,12 +339,12 @@ class AtlasViewModel(app: Application, private val saved: SavedStateHandle) : An
                     val noteId = repo.snap.captures.firstOrNull { it.id == capId }?.noteId ?: error("note not saved")
                     links.forEach { repo.link(noteId, it.id, relFor(ObjType.NOTE, it)) }
                     viewModelScope.launch(Dispatchers.Default) { processCapture(capId) }
-                    where(links) to { repo.trash(noteId) }
+                    where(links, made) to { repo.trash(noteId); made.forEach { m -> repo.trash(m.id) } }
                 }
                 else -> {
                     val id = repo.create(KObject(type = kind.type, title = p.title, body = if (p.title != p.raw) p.raw else "", due = if (kind == Sentence.Kind.TASK) due else null),
                         links.map { it.id to relFor(kind.type, it) })
-                    where(links) to { repo.trash(id) }
+                    where(links, made) to { repo.trash(id); made.forEach { m -> repo.trash(m.id) } }
                 }
             }
         }.getOrElse { say("Couldn't save — ${it.message}"); null }
@@ -277,9 +354,10 @@ class AtlasViewModel(app: Application, private val saved: SavedStateHandle) : An
         }
     }
 
-    private fun where(links: List<KObject>): String {
+    private fun where(links: List<KObject>, made: List<KObject> = emptyList()): String {
         val p = links.firstOrNull { it.type == ObjType.PROJECT }; val other = links.firstOrNull { it.type != ObjType.PROJECT }
-        return when { other != null && p != null -> "Saved to ${p.title}, linked to ${other.title}"; other != null -> "Saved, linked to ${other.title}"; p != null -> "Saved to ${p.title}"; else -> "Saved to Today" }
+        val pn = p?.let { if (made.any { m -> m.id == it.id }) "${it.title} (new space)" else it.title }
+        return when { other != null && p != null -> "Saved to $pn, linked to ${other.title}"; other != null -> "Saved, linked to ${other.title}"; p != null -> "Saved to $pn"; else -> "Saved to Today" }
     }
 
     private fun askNow(question: String) {

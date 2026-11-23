@@ -3,6 +3,7 @@ package com.jmr.atlas
 import android.Manifest
 import android.graphics.Bitmap
 import androidx.compose.ui.graphics.asAndroidBitmap
+import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.test.*
 import androidx.compose.ui.test.junit4.AndroidComposeTestRule
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
@@ -308,5 +309,65 @@ class InputUiTest {
         rule.vm { it.go(com.jmr.atlas.ui.Route.Space("p:" + rule.idOf("Home Renovation"))) }
         rule.vm { it.select(rule.idOf("Jamie Carter")) }
         rule.shot("n09_cover_lines")
+    }
+
+    @Test @Config(sdk = [36], qualifiers = "w707dp-h823dp-port-xhdpi")
+    fun readsWhereThingsGo() {
+        rule.example()
+        rule.vm { vm ->
+            fun p(t: String) = vm.parsed(t)
+            p("Add to Ankle Surgery").let { assertEquals(com.jmr.atlas.capture.Sentence.Kind.SPACE, it.kind); assertEquals("Ankle Surgery", it.title) }
+            p("Post-op instructions, add to ankle surgery").let { assertEquals("Ankle Surgery", it.newSpace); assertEquals("Post-op instructions", it.title) }
+            p("Call the surgeon tomorrow @Ankle Surgery").let { assertEquals("Ankle Surgery", it.newSpace); assertEquals(com.jmr.atlas.capture.Sentence.Kind.TASK, it.kind); assertEquals("Call the surgeon", it.title) }
+            p("Order grout add to Home Renovation").let { assertNull(it.newSpace); assertEquals("Home Renovation", it.space?.title); assertEquals("Order grout", it.title) }
+            p("new group called ankle surgery").let { assertEquals(com.jmr.atlas.capture.Sentence.Kind.SPACE, it.kind); assertEquals("Ankle Surgery", it.title) }
+            p("Move to Denver").let { assertNull(it.newSpace); assertNotEquals(com.jmr.atlas.capture.Sentence.Kind.SPACE, it.kind) }
+            p("Add milk to the shopping list").let { assertNull(it.newSpace) }
+        }
+    }
+
+    @Test @Config(sdk = [36], qualifiers = "w707dp-h823dp-port-xhdpi")
+    fun lineMakesTheSpaceItNames() {
+        rule.example()
+        rule.type("Ask about crutches add to Ankle Surgery")
+        rule.onNodeWithTag("new_space_chip").assertExists()
+        rule.shot("n10_new_space_bubble")
+        rule.tapDesc("Save")
+        val sp = rule.repo().snap.live.first { it.type == ObjType.PROJECT && it.title == "Ankle Surgery" }
+        val t = rule.repo().snap.live.first { it.title == "Ask about crutches" }
+        assertTrue(rule.repo().snap.neighbours(t.id).any { it.first.id == sp.id })
+    }
+
+    @Test @Config(sdk = [36], qualifiers = "w707dp-h823dp-port-xhdpi")
+    fun photoGoesToANewSpace() {
+        rule.example()
+        rule.tap("catch_open")
+        val png = java.io.ByteArrayOutputStream().also { android.graphics.Bitmap.createBitmap(120, 90, android.graphics.Bitmap.Config.ARGB_8888).apply { eraseColor(0xFFB39DDB.toInt()) }.compress(Bitmap.CompressFormat.PNG, 100, it) }.toByteArray()
+        rule.vm { it.attachments.value = listOf(AtlasViewModel.Pending("p1", com.jmr.atlas.capture.Readers.Read(png, "image/png", "IMG_2041.png"),
+            android.graphics.BitmapFactory.decodeByteArray(png, 0, png.size).asImageBitmap())) }
+        rule.onNodeWithTag("attachments").assertExists()
+        rule.shot("n11_photo_waiting")
+        rule.onNodeWithTag("catch_input").performTextInput("Add to Ankle Surgery"); rule.settle()
+        rule.onNodeWithTag("new_space_chip").assertExists()
+        rule.shot("n12_photo_to_new_space")
+        rule.tapDesc("Save")
+        val snap = rule.repo().snap
+        val sp = snap.live.first { it.type == ObjType.PROJECT && it.title == "Ankle Surgery" }
+        val img = snap.live.first { it.type == ObjType.IMAGE && it.title == "IMG_2041" }
+        assertTrue(snap.neighbours(img.id).any { it.first.id == sp.id })
+    }
+
+    @Test @Config(sdk = [36], qualifiers = "w707dp-h823dp-port-xhdpi")
+    fun linkPickerCreatesASpace() {
+        rule.example()
+        rule.type("Book physical therapy")
+        rule.tap("link_to")
+        rule.onNodeWithTag("link_search").performTextInput("ankle surgery"); rule.settle()
+        rule.shot("n13_picker_create")
+        rule.tap("create_space")
+        rule.tapDesc("Save")
+        val sp = rule.repo().snap.live.first { it.type == ObjType.PROJECT && it.title == "Ankle Surgery" }
+        val t = rule.repo().snap.live.first { it.title == "Book physical therapy" }
+        assertTrue(rule.repo().snap.neighbours(t.id).any { it.first.id == sp.id })
     }
 }

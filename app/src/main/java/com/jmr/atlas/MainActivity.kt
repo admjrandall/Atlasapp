@@ -58,12 +58,12 @@ class MainActivity : ComponentActivity(), Platform {
     val locked = MutableStateFlow(false)
     private var backgroundedAt = 0L
 
-    private val imagePicker = registerForActivityResult(ActivityResultContracts.PickVisualMedia()) { uri -> uri?.let { vm.captureUri(it) } }
+    private val imagePicker = registerForActivityResult(ActivityResultContracts.PickVisualMedia()) { uri -> uri?.let { vm.attachOrCapture(it) } }
     private var photoCb: ((Uri) -> Unit)? = null
     private val photoPicker = registerForActivityResult(ActivityResultContracts.PickVisualMedia()) { uri -> uri?.let { photoCb?.invoke(it) }; photoCb = null }
-    private val filePicker = registerForActivityResult(ActivityResultContracts.OpenDocument()) { uri -> uri?.let { vm.captureUri(it) } }
+    private val filePicker = registerForActivityResult(ActivityResultContracts.OpenDocument()) { uri -> uri?.let { vm.attachOrCapture(it) } }
     private val scanner = registerForActivityResult(ActivityResultContracts.StartIntentSenderForResult()) { r ->
-        GmsDocumentScanningResult.fromActivityResultIntent(r.data)?.pdf?.uri?.let { vm.captureUri(it, "application/pdf") }
+        GmsDocumentScanningResult.fromActivityResultIntent(r.data)?.pdf?.uri?.let { vm.attachOrCapture(it, "application/pdf") }
     }
     private val exporter = registerForActivityResult(ActivityResultContracts.CreateDocument("application/json")) { uri ->
         val json = pendingExport; pendingExport = null
