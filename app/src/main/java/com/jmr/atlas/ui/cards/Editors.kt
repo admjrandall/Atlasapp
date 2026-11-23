@@ -1,6 +1,8 @@
 package com.jmr.atlas.ui.cards
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -17,6 +19,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.selected
 import androidx.compose.ui.text.input.KeyboardCapitalization
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
@@ -29,6 +32,8 @@ import com.jmr.atlas.ui.AtlasViewModel
 import com.jmr.atlas.ui.components.dayDate
 import com.jmr.atlas.ui.theme.Atlas
 import com.jmr.atlas.ui.theme.icon
+import com.jmr.atlas.ui.theme.T
+import androidx.compose.ui.unit.sp
 import java.time.Instant
 import java.time.LocalDate
 import java.time.ZoneOffset
@@ -92,104 +97,101 @@ fun EditorScreen(vm: AtlasViewModel, snap: Snapshot, existing: KObject?, newType
         if (existing == null) { vm.say("${type.label} created."); vm.open(id) }
     }
 
+    val (tint, ink) = heroColors(type)
     Dialog({ vm.show(null) }, DialogProperties(usePlatformDefaultWidth = false, decorFitsSystemWindows = false)) {
         Surface(Modifier.fillMaxSize().testTag("edit_sheet"), color = Atlas.Background) {
             Column(Modifier.fillMaxSize().windowInsetsPadding(WindowInsets.safeDrawing)) {
-                Row(Modifier.fillMaxWidth().height(60.dp).padding(horizontal = 8.dp), verticalAlignment = Alignment.CenterVertically) {
-                    TextButton({ vm.show(null) }) { Text("Cancel") }
-                    Text(if (existing == null) "New ${type.label.lowercase()}" else "Edit ${type.label.lowercase()}", style = MaterialTheme.typography.titleMedium, modifier = Modifier.weight(1f), textAlign = androidx.compose.ui.text.style.TextAlign.Center)
-                    Button(::save, Modifier.testTag("save"), colors = ButtonDefaults.buttonColors(containerColor = Atlas.Primary)) { Text("Save") }
+                Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 10.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Pill6("Cancel", Atlas.Chip, Atlas.DeepPlum) { vm.show(null) }
+                    Text((if (existing == null) "New " else "Edit ") + type.label.lowercase(), style = T.eyebrow, color = Atlas.SecondaryText, modifier = Modifier.weight(1f), textAlign = androidx.compose.ui.text.style.TextAlign.Center)
+                    Pill6("Save", Atlas.DeepPlum, androidx.compose.ui.graphics.Color.White, Modifier.testTag("save")) { save() }
                 }
-                Column(Modifier.weight(1f).verticalScroll(rememberScrollState()).padding(horizontal = 16.dp).padding(bottom = 48.dp).imePadding()) {
-                    if (linkObj != null) Text("Connected to ${linkObj.title}", style = MaterialTheme.typography.bodySmall, color = Atlas.SecondaryText)
-                    if (existing == null && newType == null) FlowRow(Modifier.padding(vertical = 8.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        CREATABLE.forEach { t -> FilterChip(type == t, { type = t }, { Text(t.label) }, leadingIcon = { Icon(icon(t), null, Modifier.size(18.dp)) }) }
+                Column(Modifier.weight(1f).verticalScroll(rememberScrollState()).padding(horizontal = 16.dp).padding(bottom = 48.dp).imePadding().widthIn(max = 720.dp)) {
+                    if (existing == null && newType == null) ChoiceRow(CREATABLE.map { it.label }, type.label) { l -> type = CREATABLE.first { it.label == l } }
+                    // ---- hero: what it is, its name, its words — edited in place, on the same tint as its page
+                    Column(Modifier.fillMaxWidth().padding(top = 6.dp).clip(RoundedCornerShape(28.dp)).background(tint).padding(20.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                        Text(type.label.uppercase(), style = T.eyebrow, color = ink)
+                        if (linkObj != null) Text("Linked to ${linkObj.title}", style = T.meta, color = Atlas.DeepPlum)
+                        when (type) {
+                            ObjType.PERSON -> {
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    Box(Modifier.clip(androidx.compose.foundation.shape.CircleShape).clickable(role = androidx.compose.ui.semantics.Role.Button, onClickLabel = "Choose photo") {
+                                        if (existing != null) platform.pickPhoto { vm.setPhoto(existing.id, it) } else vm.say("Save first, then choose a photo.") }) { PersonPhoto(base.copy(title = "$first $last"), 72.dp) }
+                                    Spacer(Modifier.width(14.dp))
+                                    Column(Modifier.weight(1f)) {
+                                        TitleField(first, { first = it }, "First name", Modifier.testTag("field_title"))
+                                        TitleField(last, { last = it }, "Last name")
+                                    }
+                                }
+                                HeroLine(nickname, { nickname = it }, "Nickname")
+                            }
+                            else -> TitleField(title, { title = it }, when (type) { ObjType.TASK -> "What needs doing"; ObjType.EVENT -> "Milestone"; ObjType.PROJECT -> "Project name"; else -> "Title" }, Modifier.testTag("field_title"))
+                        }
+                        val bodyHint = when (type) { ObjType.PERSON -> "How you know them (stays in Atlas)"; ObjType.PROJECT -> "Goal and description"; ObjType.NOTE -> "Note"; ObjType.TASK -> "Notes"; else -> "Your note" }
+                        HeroLine(body, { body = it }, bodyHint, minLines = if (type == ObjType.NOTE || type == ObjType.IDEA || type == ObjType.DECISION) 4 else 2)
                     }
                     when (type) {
                         ObjType.PERSON -> {
-                            if (base.contactKey.isNotBlank() || sync) Surface(color = Atlas.CoolMint, shape = RoundedCornerShape(16.dp), modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp)) {
-                                Row(Modifier.padding(14.dp)) { Icon(Icons.Outlined.Call, null, tint = Atlas.DeepTeal); Spacer(Modifier.width(10.dp))
-                                    Text(if (sync) "Contact fields save to your phone contact. Atlas-only fields stay in Atlas." else "Linked to a phone contact. Turn on two-way sync in Settings to save edits back to it.", color = Atlas.DeepTeal, style = MaterialTheme.typography.bodyMedium) }
-                            }
-                            Group("Photo")
-                            Row(verticalAlignment = Alignment.CenterVertically) {
-                                PersonPhoto(base.copy(title = "$first $last"), 72.dp); Spacer(Modifier.width(14.dp))
-                                Column(Modifier.weight(1f)) {
-                                    FilledTonalButton({ if (existing != null) platform.pickPhoto { vm.setPhoto(existing.id, it) } else vm.say("Save first, then choose a photo.") }, Modifier.fillMaxWidth()) { Icon(Icons.Outlined.Image, null); Spacer(Modifier.width(8.dp)); Text("Choose photo") }
-                                    Text("From your photos · kept encrypted in Atlas", style = MaterialTheme.typography.bodySmall, color = Atlas.SecondaryText)
-                                }
-                            }
-                            Group("Name")
-                            Field(first, { first = it }, "First name", Modifier.testTag("field_title"))
-                            Field(last, { last = it }, "Last name")
-                            Field(nickname, { nickname = it }, "Nickname")
+                            if (base.contactKey.isNotBlank() || sync) Text(if (sync) "Phone, email, address, work and dates save to your phone contact. Notes stay in Atlas." else "Linked to a phone contact. Turn on two-way sync in Settings to save edits back to it.",
+                                style = T.meta, color = Atlas.DeepTeal, modifier = Modifier.padding(top = 10.dp, start = 4.dp))
                             Repeatable("Phone", DetailKind.PHONE, contact, Contacts.PHONE_LABELS, "Number", KeyboardType.Phone)
                             Repeatable("Email", DetailKind.EMAIL, contact, Contacts.EMAIL_LABELS, "Email", KeyboardType.Email)
                             Group("Work")
-                            Field(org, { org = it }, "Company")
-                            Field(role, { role = it }, "Title")
+                            Card6 { RowField(org, { org = it }, "Company"); Line6(); RowField(role, { role = it }, "Title") }
                             Repeatable("Address", DetailKind.ADDRESS, contact, Contacts.ADDRESS_LABELS, "Street, city, state", KeyboardType.Text)
-                            Repeatable("Dates", DetailKind.DATE, contact, listOf("Birthday", "Anniversary", "Other"), "Date (YYYY-MM-DD or --MM-DD)", KeyboardType.Text, addLabel = "Add date")
+                            Repeatable("Dates", DetailKind.DATE, contact, listOf("Birthday", "Anniversary", "Other"), "YYYY-MM-DD or --MM-DD", KeyboardType.Text, addLabel = "Add date")
                             RepeatableSocial(contact)
-                            Group("In Atlas only", "Not saved to the phone contact")
-                            Field(body, { body = it }, "How you know them", minLines = 2)
                         }
                         ObjType.PROJECT -> {
-                            Field(title, { title = it }, "Title", Modifier.testTag("field_title"))
                             Group("Status")
-                            FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) { ProjectStatus.entries.forEach { s -> FilterChip(status == s, { status = s }, { Text(s.label) }) } }
+                            ChoiceRow(ProjectStatus.entries.map { it.label }, status.label) { l -> status = ProjectStatus.entries.first { it.label == l } }
                             Group("Dates")
-                            DateField("Started", start, { picking = { d -> start = d } }) { start = null }
-                            DateField("Target", target, { picking = { d -> target = d } }) { target = null }
-                            Field(body, { body = it }, "Goal and description", minLines = 3)
+                            Card6 { DateField("Started", start, { picking = { d -> start = d } }) { start = null }; Line6(); DateField("Finish by", target, { picking = { d -> target = d } }) { target = null } }
                         }
                         ObjType.TASK -> {
-                            Field(title, { title = it }, "Task", Modifier.testTag("field_title"))
                             Group("When")
-                            DateField("Plan", due, { picking = { d -> due = d } }) { due = null }
-                            DateField("Deadline", deadline, { picking = { d -> deadline = d } }) { deadline = null }
+                            Card6 { DateField("Plan", due, { picking = { d -> due = d } }) { due = null }; Line6(); DateField("Deadline", deadline, { picking = { d -> deadline = d } }) { deadline = null } }
                             Group("Priority")
-                            FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) { Priority.entries.forEach { p -> FilterChip(priority == p, { priority = p }, { Text(p.label) }) } }
-                            Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(top = 8.dp)) { Switch(blocked, { blocked = it }); Spacer(Modifier.width(12.dp)); Text("Blocked") }
-                            Field(body, { body = it }, "Notes", minLines = 3)
+                            ChoiceRow(Priority.entries.map { it.label }, priority.label) { l -> priority = Priority.entries.first { it.label == l } }
+                            Spacer(Modifier.height(10.dp))
+                            Card6 { Row(Modifier.fillMaxWidth().heightIn(min = 56.dp).padding(horizontal = 16.dp), verticalAlignment = Alignment.CenterVertically) {
+                                Column(Modifier.weight(1f)) { Text("Blocked", style = T.row.copy(fontSize = 16.sp), color = Atlas.DeepPlum); Text("Waiting on something before you can start", style = T.meta, color = Atlas.SecondaryText) }
+                                Switch(blocked, { blocked = it }) } }
                         }
                         ObjType.DOCUMENT, ObjType.IMAGE -> {
-                            Field(title, { title = it }, "Title", Modifier.testTag("field_title"))
                             Group("Kind")
-                            FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) { DOC_KINDS.forEach { k -> FilterChip(kind == k, { kind = if (kind == k) "" else k }, { Text(k) }) } }
+                            ChoiceRow(DOC_KINDS, kind.takeIf { it.isNotBlank() }) { k -> kind = if (kind == k) "" else k }
                             Group("Dates")
-                            DateField("On the document", docDate, { picking = { d -> docDate = d } }) { docDate = null }
+                            Card6 { DateField("On the document", docDate, { picking = { d -> docDate = d } }) { docDate = null } }
                             Group("Key facts", "Read from the document — fix anything wrong")
-                            facts.forEachIndexed { i, f ->
-                                Row(verticalAlignment = Alignment.CenterVertically) {
-                                    OutlinedTextField(f.label, { facts[i] = f.copy(label = it) }, Modifier.weight(0.42f).padding(end = 6.dp), label = { Text("Label") }, singleLine = true)
-                                    OutlinedTextField(f.value, { facts[i] = f.copy(value = it) }, Modifier.weight(0.58f), label = { Text("Value") }, singleLine = true)
-                                    IconButton({ facts.removeAt(i) }, Modifier.semantics { contentDescription = "Remove fact" }) { Icon(Icons.Outlined.Close, null) }
+                            Card6 {
+                                facts.forEachIndexed { i, f ->
+                                    if (i > 0) Line6()
+                                    Row(Modifier.padding(start = 16.dp, end = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+                                        Plain(f.label, { facts[i] = f.copy(label = it) }, "Label", Modifier.weight(0.42f))
+                                        Plain(f.value, { facts[i] = f.copy(value = it) }, "Value", Modifier.weight(0.58f))
+                                        IconButton({ facts.removeAt(i) }, Modifier.semantics { contentDescription = "Remove fact" }) { Icon(Icons.Outlined.Close, null, tint = Atlas.Hint) }
+                                    }
                                 }
+                                if (facts.isNotEmpty()) Line6()
+                                AddRow("Add fact") { facts.add(Detail(objectId = base.id, kind = DetailKind.FACT, label = "", value = "")) }
                             }
-                            TextButton({ facts.add(Detail(objectId = base.id, kind = DetailKind.FACT, label = "", value = "")) }) { Icon(Icons.Outlined.Add, null); Spacer(Modifier.width(6.dp)); Text("Add fact") }
-                            Field(body, { body = it }, "Your note", minLines = 2)
                         }
                         ObjType.LINK -> {
-                            Field(title, { title = it }, "Title", Modifier.testTag("field_title"))
-                            Field(url, { url = it }, "Address (https://…)", keyboard = KeyboardType.Uri)
+                            Group("Address")
+                            Card6 { RowField(url, { url = it }, "https://…", keyboard = KeyboardType.Uri) }
                             Group("Kind")
-                            FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) { LINK_KINDS.forEach { k -> FilterChip(kind == k, { kind = if (kind == k) "" else k }, { Text(k) }) } }
-                            Field(body, { body = it }, "Your note", minLines = 2)
+                            ChoiceRow(LINK_KINDS, kind.takeIf { it.isNotBlank() }) { k -> kind = if (kind == k) "" else k }
                         }
                         ObjType.EVENT -> {
-                            Field(title, { title = it }, "Milestone", Modifier.testTag("field_title"))
-                            DateField("Date", eventDate, { picking = { d -> eventDate = d } }) { eventDate = null }
-                            Field(body, { body = it }, "Details", minLines = 3)
+                            Group("Date")
+                            Card6 { DateField("Date", eventDate, { picking = { d -> eventDate = d } }) { eventDate = null } }
                         }
-                        else -> {
-                            Field(title, { title = it }, "Title", Modifier.testTag("field_title"))
-                            Field(body, { body = it }, if (type == ObjType.NOTE) "Note" else "Details", minLines = 5)
-                        }
+                        else -> {}
                     }
                     if (custom.isNotEmpty()) {
                         Group("Your fields")
-                        custom.forEachIndexed { i, f -> CustomFieldEditor(vm, snap, f) { custom[i] = it } }
+                        Card6(Modifier.padding(horizontal = 0.dp)) { Column(Modifier.padding(horizontal = 12.dp, vertical = 6.dp)) { custom.forEachIndexed { i, f -> CustomFieldEditor(vm, snap, f) { custom[i] = it } } } }
                     }
                 }
             }
@@ -198,34 +200,109 @@ fun EditorScreen(vm: AtlasViewModel, snap: Snapshot, existing: KObject?, newType
     picking?.let { cb -> DatePick(LocalDate.now(), { picking = null }) { cb(it); picking = null } }
 }
 
+private fun heroColors(t: ObjType): Pair<androidx.compose.ui.graphics.Color, androidx.compose.ui.graphics.Color> = when (t) {
+    ObjType.PERSON, ObjType.PROJECT, ObjType.COLLECTION -> Atlas.PrimaryContainer to Atlas.Primary
+    ObjType.IMAGE -> Atlas.Peach to Atlas.CoralText
+    else -> com.jmr.atlas.ui.theme.accent(t).let { it.container to it.content }
+}
+
 @Composable
 private fun Group(title: String, sub: String? = null) {
-    Row(Modifier.fillMaxWidth().padding(top = 20.dp, bottom = 6.dp), verticalAlignment = Alignment.Bottom) {
-        Text(title, style = MaterialTheme.typography.titleSmall, modifier = Modifier.weight(1f))
-        sub?.let { Text(it, style = MaterialTheme.typography.bodySmall, color = Atlas.SecondaryText) }
+    Row(Modifier.fillMaxWidth().padding(start = 4.dp, top = 22.dp, bottom = 8.dp), verticalAlignment = Alignment.Bottom) {
+        Text(title.uppercase(), style = T.eyebrow, color = Atlas.SecondaryText, modifier = Modifier.weight(1f))
+        sub?.let { Text(it, style = T.meta.copy(fontSize = 12.sp), color = Atlas.SecondaryText) }
     }
 }
 
+/** White grouped card that holds rows, like a page section. */
+@Composable
+fun Card6(modifier: Modifier = Modifier, content: @Composable ColumnScope.() -> Unit) =
+    Column(modifier.fillMaxWidth().clip(RoundedCornerShape(20.dp)).background(Atlas.Surface), content = content)
+
+@Composable
+fun Line6() = HorizontalDivider(Modifier.padding(start = 16.dp), color = Atlas.Hairline)
+
+@Composable
+private fun Pill6(text: String, bg: androidx.compose.ui.graphics.Color, fg: androidx.compose.ui.graphics.Color, modifier: Modifier = Modifier, onClick: () -> Unit) =
+    Box(modifier.heightIn(min = 44.dp).clip(RoundedCornerShape(22.dp)).background(bg).clickable(role = androidx.compose.ui.semantics.Role.Button, onClick = onClick).padding(horizontal = 20.dp),
+        contentAlignment = Alignment.Center) { Text(text, style = T.row.copy(fontSize = 15.sp), color = fg) }
+
+/** The big title, typed straight into the hero. */
+@Composable
+private fun TitleField(v: String, on: (String) -> Unit, placeholder: String, modifier: Modifier = Modifier) =
+    androidx.compose.foundation.text.BasicTextField(v, on, modifier.fillMaxWidth(), textStyle = T.heroTitle.copy(fontSize = 28.sp, lineHeight = 33.sp, color = Atlas.DeepPlum),
+        cursorBrush = androidx.compose.ui.graphics.SolidColor(Atlas.Primary), keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.Sentences),
+        decorationBox = { inner -> Box { if (v.isEmpty()) Text(placeholder, style = T.heroTitle.copy(fontSize = 28.sp, lineHeight = 33.sp), color = Atlas.DeepPlum.copy(alpha = 0.35f)); inner() } })
+
+/** A borderless line of text on the hero tint (notes, nickname). */
+@Composable
+private fun HeroLine(v: String, on: (String) -> Unit, placeholder: String, minLines: Int = 1) =
+    androidx.compose.foundation.text.BasicTextField(v, on, Modifier.fillMaxWidth().padding(top = 4.dp), textStyle = T.body.copy(fontSize = 17.sp, lineHeight = 25.sp, color = Atlas.DeepPlum),
+        minLines = minLines, cursorBrush = androidx.compose.ui.graphics.SolidColor(Atlas.Primary), keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.Sentences),
+        decorationBox = { inner -> Box { if (v.isEmpty()) Text(placeholder, style = T.body.copy(fontSize = 17.sp, lineHeight = 25.sp), color = Atlas.DeepPlum.copy(alpha = 0.45f)); inner() } })
+
+@Composable
+private fun Plain(v: String, on: (String) -> Unit, placeholder: String, modifier: Modifier = Modifier, keyboard: KeyboardType = KeyboardType.Text, singleLine: Boolean = true, minLines: Int = 1) =
+    androidx.compose.foundation.text.BasicTextField(v, on, modifier.padding(vertical = 16.dp), textStyle = T.body.copy(fontSize = 17.sp, color = Atlas.DeepPlum), singleLine = singleLine, minLines = minLines,
+        cursorBrush = androidx.compose.ui.graphics.SolidColor(Atlas.Primary),
+        keyboardOptions = KeyboardOptions(capitalization = if (keyboard == KeyboardType.Text) KeyboardCapitalization.Sentences else KeyboardCapitalization.None, keyboardType = keyboard),
+        decorationBox = { inner -> Box { if (v.isEmpty()) Text(placeholder, style = T.body.copy(fontSize = 17.sp), color = Atlas.Hint); inner() } })
+
+/** One editable row inside a Card6: placeholder shows what goes there. */
+@Composable
+private fun RowField(v: String, on: (String) -> Unit, placeholder: String, keyboard: KeyboardType = KeyboardType.Text) =
+    Plain(v, on, placeholder, Modifier.fillMaxWidth().padding(horizontal = 16.dp), keyboard)
+
+/** A labelled field on its own white card (also used by the small sheets). [modifier] lands on the text field. */
 @Composable
 fun Field(v: String, on: (String) -> Unit, label: String, modifier: Modifier = Modifier, minLines: Int = 1, keyboard: KeyboardType = KeyboardType.Text) =
-    OutlinedTextField(v, on, modifier.fillMaxWidth().padding(vertical = 4.dp), label = { Text(label) }, singleLine = minLines == 1, minLines = minLines,
-        keyboardOptions = KeyboardOptions(capitalization = if (keyboard == KeyboardType.Text) KeyboardCapitalization.Sentences else KeyboardCapitalization.None, keyboardType = keyboard))
+    Column(Modifier.fillMaxWidth().padding(vertical = 4.dp).clip(RoundedCornerShape(16.dp)).background(Atlas.Surface).border(1.dp, Atlas.Hairline, RoundedCornerShape(16.dp)).padding(horizontal = 16.dp, vertical = 10.dp)) {
+        Text(label, style = T.meta.copy(fontSize = 12.sp), color = Atlas.SecondaryText)
+        androidx.compose.foundation.text.BasicTextField(v, on, modifier.fillMaxWidth().padding(top = 4.dp), textStyle = T.body.copy(fontSize = 17.sp, color = Atlas.DeepPlum),
+            singleLine = minLines == 1, minLines = minLines, cursorBrush = androidx.compose.ui.graphics.SolidColor(Atlas.Primary),
+            keyboardOptions = KeyboardOptions(capitalization = if (keyboard == KeyboardType.Text) KeyboardCapitalization.Sentences else KeyboardCapitalization.None, keyboardType = keyboard))
+    }
 
+/** A date as a tappable row: label, the date (or "Not set"), and × to clear. */
 @Composable
 fun DateField(label: String, d: LocalDate?, pick: () -> Unit, clear: () -> Unit) {
-    Row(Modifier.fillMaxWidth().padding(vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
-        Text(label, style = MaterialTheme.typography.labelLarge, modifier = Modifier.width(130.dp))
-        AssistChip(pick, { Text(d?.let { dayDate(it) } ?: "Set date") }, leadingIcon = { Icon(Icons.Outlined.Event, null) })
-        if (d != null) TextButton(clear) { Text("Clear") }
+    Row(Modifier.fillMaxWidth().heightIn(min = 56.dp).clickable(role = androidx.compose.ui.semantics.Role.Button, onClickLabel = "Set $label", onClick = pick).padding(start = 16.dp, end = 4.dp),
+        verticalAlignment = Alignment.CenterVertically) {
+        Text(label, style = T.row.copy(fontSize = 16.sp), color = Atlas.DeepPlum, modifier = Modifier.weight(1f))
+        Text(d?.let { dayDate(it) } ?: "Not set", style = T.row.copy(fontSize = 16.sp), color = if (d != null) Atlas.Primary else Atlas.Hint)
+        if (d != null) IconButton(clear, Modifier.semantics { contentDescription = "Clear $label" }) { Icon(Icons.Outlined.Close, null, tint = Atlas.Hint, modifier = Modifier.size(20.dp)) }
+        else Spacer(Modifier.width(14.dp))
     }
 }
+
+/** Pills for picking one of a few values (status, priority, kind). */
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+fun ChoiceRow(options: List<String>, selected: String?, onSelect: (String) -> Unit) =
+    FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        options.forEach { o ->
+            val on = o == selected
+            Box(Modifier.heightIn(min = 44.dp).clip(RoundedCornerShape(22.dp)).background(if (on) Atlas.DeepPlum else Atlas.Surface)
+                .then(if (on) Modifier else Modifier.border(1.dp, Atlas.Border, RoundedCornerShape(22.dp)))
+                .clickable(role = androidx.compose.ui.semantics.Role.RadioButton, onClick = { onSelect(o) }).semantics { this.selected = on }.padding(horizontal = 16.dp),
+                contentAlignment = Alignment.Center) { Text(o, style = T.metaStrong.copy(fontSize = 15.sp), color = if (on) androidx.compose.ui.graphics.Color.White else Atlas.DeepPlum) }
+        }
+    }
+
+@Composable
+private fun AddRow(text: String, onClick: () -> Unit) =
+    Row(Modifier.fillMaxWidth().heightIn(min = 52.dp).clickable(role = androidx.compose.ui.semantics.Role.Button, onClick = onClick).padding(horizontal = 16.dp), verticalAlignment = Alignment.CenterVertically) {
+        Icon(Icons.Outlined.Add, null, tint = Atlas.Primary, modifier = Modifier.size(20.dp)); Spacer(Modifier.width(10.dp))
+        Text(text, style = T.row.copy(fontSize = 16.sp), color = Atlas.Primary)
+    }
 
 @Composable
 private fun LabelPicker(label: String, options: List<String>, on: (String) -> Unit) {
     var open by remember { mutableStateOf(false) }
     Box {
-        Surface(onClick = { open = true }, shape = RoundedCornerShape(12.dp), color = Atlas.SurfaceSecondary, modifier = Modifier.padding(end = 8.dp).widthIn(min = 92.dp).heightIn(min = 52.dp)) {
-            Row(Modifier.padding(horizontal = 12.dp), verticalAlignment = Alignment.CenterVertically) { Text(label.ifBlank { "Label" }, style = MaterialTheme.typography.labelLarge, modifier = Modifier.weight(1f, false)); Icon(Icons.Outlined.ExpandMore, null, Modifier.size(18.dp)) }
+        Row(Modifier.padding(end = 10.dp).widthIn(min = 84.dp).heightIn(min = 36.dp).clip(RoundedCornerShape(10.dp)).background(Atlas.Chip).clickable(role = androidx.compose.ui.semantics.Role.Button) { open = true }
+            .padding(horizontal = 10.dp), verticalAlignment = Alignment.CenterVertically) {
+            Text(label.ifBlank { "Label" }, style = T.metaStrong, color = Atlas.DeepPlum, modifier = Modifier.weight(1f, false)); Icon(Icons.Outlined.ExpandMore, null, Modifier.size(16.dp), tint = Atlas.SecondaryText)
         }
         DropdownMenu(open, { open = false }) { options.forEach { o -> DropdownMenuItem({ Text(o) }, { on(o); open = false }) } }
     }
@@ -234,27 +311,34 @@ private fun LabelPicker(label: String, options: List<String>, on: (String) -> Un
 @Composable
 private fun Repeatable(title: String, kind: DetailKind, list: SnapshotStateList<Detail>, labels: List<String>, hint: String, kb: KeyboardType, addLabel: String = "Add ${title.lowercase()}") {
     Group(title)
-    list.withIndex().filter { it.value.kind == kind }.forEach { (i, d) ->
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            LabelPicker(d.label, labels) { list[i] = d.copy(label = it) }
-            OutlinedTextField(d.value, { list[i] = d.copy(value = it) }, Modifier.weight(1f), label = { Text(hint) }, singleLine = true, keyboardOptions = KeyboardOptions(keyboardType = kb))
-            IconButton({ list.removeAt(i) }, Modifier.semantics { contentDescription = "Remove" }) { Icon(Icons.Outlined.Close, null) }
+    Card6 {
+        val rows = list.withIndex().filter { it.value.kind == kind }
+        rows.forEach { (i, d) ->
+            Row(Modifier.padding(start = 12.dp, end = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+                LabelPicker(d.label, labels) { list[i] = d.copy(label = it) }
+                Plain(d.value, { list[i] = d.copy(value = it) }, hint, Modifier.weight(1f), kb)
+                IconButton({ list.removeAt(i) }, Modifier.semantics { contentDescription = "Remove" }) { Icon(Icons.Outlined.Close, null, tint = Atlas.Hint) }
+            }
+            Line6()
         }
+        AddRow(addLabel) { list.add(Detail(objectId = "", kind = kind, label = labels.first())) }
     }
-    TextButton({ list.add(Detail(objectId = "", kind = kind, label = labels.first())) }) { Icon(Icons.Outlined.Add, null); Spacer(Modifier.width(6.dp)); Text(addLabel) }
 }
 
 @Composable
 private fun RepeatableSocial(list: SnapshotStateList<Detail>) {
     Group("Websites and social")
-    list.withIndex().filter { it.value.kind == DetailKind.WEBSITE || it.value.kind == DetailKind.SOCIAL }.forEach { (i, d) ->
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            LabelPicker(d.label, Contacts.SOCIAL_LABELS) { list[i] = d.copy(label = it, kind = if (it == "Website") DetailKind.WEBSITE else DetailKind.SOCIAL) }
-            OutlinedTextField(d.value, { list[i] = d.copy(value = it) }, Modifier.weight(1f), label = { Text("Link") }, singleLine = true, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Uri))
-            IconButton({ list.removeAt(i) }, Modifier.semantics { contentDescription = "Remove" }) { Icon(Icons.Outlined.Close, null) }
+    Card6 {
+        list.withIndex().filter { it.value.kind == DetailKind.WEBSITE || it.value.kind == DetailKind.SOCIAL }.forEach { (i, d) ->
+            Row(Modifier.padding(start = 12.dp, end = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+                LabelPicker(d.label, Contacts.SOCIAL_LABELS) { list[i] = d.copy(label = it, kind = if (it == "Website") DetailKind.WEBSITE else DetailKind.SOCIAL) }
+                Plain(d.value, { list[i] = d.copy(value = it) }, "Link", Modifier.weight(1f), KeyboardType.Uri)
+                IconButton({ list.removeAt(i) }, Modifier.semantics { contentDescription = "Remove" }) { Icon(Icons.Outlined.Close, null, tint = Atlas.Hint) }
+            }
+            Line6()
         }
+        AddRow("Add link") { list.add(Detail(objectId = "", kind = DetailKind.SOCIAL, label = "LinkedIn")) }
     }
-    TextButton({ list.add(Detail(objectId = "", kind = DetailKind.SOCIAL, label = "LinkedIn")) }) { Icon(Icons.Outlined.Add, null); Spacer(Modifier.width(6.dp)); Text("Add link") }
 }
 
 /** Value editor for one custom field, shaped by its type. */
@@ -286,10 +370,15 @@ fun CustomFieldEditor(vm: AtlasViewModel, snap: Snapshot, f: Detail, on: (Detail
                 }
             }
         }
-        else -> OutlinedTextField(f.value, { on(f.copy(value = it)) }, Modifier.fillMaxWidth().padding(vertical = 4.dp), label = { Text(f.label) }, singleLine = true,
-            leadingIcon = if (f.type == FieldType.MONEY) ({ Text("$") }) else null,
-            keyboardOptions = KeyboardOptions(keyboardType = when (f.type) { FieldType.NUMBER, FieldType.MONEY -> KeyboardType.Decimal; FieldType.LINK -> KeyboardType.Uri; else -> KeyboardType.Text }),
-            visualTransformation = if (f.flag) androidx.compose.ui.text.input.PasswordVisualTransformation() else androidx.compose.ui.text.input.VisualTransformation.None)
+        else -> Row(Modifier.fillMaxWidth().padding(vertical = 2.dp), verticalAlignment = Alignment.CenterVertically) {
+            Text(f.label, style = T.row.copy(fontSize = 16.sp), color = Atlas.DeepPlum, modifier = Modifier.width(130.dp).padding(start = 4.dp))
+            if (f.type == FieldType.MONEY) Text("$", style = T.body.copy(fontSize = 17.sp), color = Atlas.SecondaryText)
+            androidx.compose.foundation.text.BasicTextField(f.value, { on(f.copy(value = it)) }, Modifier.weight(1f).padding(vertical = 16.dp, horizontal = 4.dp), singleLine = true,
+                textStyle = T.body.copy(fontSize = 17.sp, color = Atlas.DeepPlum), cursorBrush = androidx.compose.ui.graphics.SolidColor(Atlas.Primary),
+                keyboardOptions = KeyboardOptions(keyboardType = when (f.type) { FieldType.NUMBER, FieldType.MONEY -> KeyboardType.Decimal; FieldType.LINK -> KeyboardType.Uri; else -> KeyboardType.Text }),
+                visualTransformation = if (f.flag) androidx.compose.ui.text.input.PasswordVisualTransformation() else androidx.compose.ui.text.input.VisualTransformation.None,
+                decorationBox = { inner -> Box { if (f.value.isEmpty()) Text("Empty", style = T.body.copy(fontSize = 17.sp), color = Atlas.Hint); inner() } })
+        }
     }
 }
 

@@ -220,3 +220,93 @@ class ItemPageUiTest {
         rule.shot("i03_task_done")
     }
 }
+
+/** The input box end to end on the inner screen: toasts leave, lines land on the item you're looking at, @ and Link to work. */
+@RunWith(RobolectricTestRunner::class)
+@GraphicsMode(GraphicsMode.Mode.NATIVE)
+class InputUiTest {
+    @get:Rule val rule = createAndroidComposeRule<MainActivity>()
+    @Before fun perms() = grantNotifications()
+    private fun gone(tag: String) = rule.onAllNodesWithTag(tag, useUnmergedTree = true).fetchSemanticsNodes().isEmpty()
+
+    @Test @Config(sdk = [36], qualifiers = "w707dp-h823dp-port-xhdpi")
+    fun toastGoesAway() {
+        rule.example()
+        rule.type("Call the dentist tomorrow")
+        rule.mainClock.autoAdvance = false
+        rule.onNodeWithContentDescription("Save").performClick()
+        rule.mainClock.advanceTimeBy(1000)
+        rule.onNodeWithTag("toast", useUnmergedTree = true).assertExists()
+        rule.shot("n01_toast")
+        rule.mainClock.advanceTimeBy(6000)
+        assertTrue("toast should leave on its own", gone("toast"))
+        rule.mainClock.autoAdvance = true
+    }
+
+    @Test @Config(sdk = [36], qualifiers = "w707dp-h823dp-port-xhdpi")
+    fun lineOnATaskBecomesAStep() {
+        rule.example()
+        val task = rule.idOf("Order tile samples"); rule.vmOpen(task)
+        rule.type("Check the haul-away fee")
+        rule.onNodeWithTag("kind_chip").assert(hasText("Step", substring = true, ignoreCase = true))
+        rule.onNodeWithTag("catch_preview").assert(hasAnyDescendant(hasText("Order tile samples", substring = true)))
+        rule.shot("n02_step_on_task")
+        rule.tapDesc("Save")
+        assertTrue(rule.repo().snap.detailsOf(task, DetailKind.STEP).any { it.value == "Check the haul-away fee" })
+    }
+
+    @Test @Config(sdk = [36], qualifiers = "w707dp-h823dp-port-xhdpi")
+    fun ideaOnAPersonIsLinkedToThem() {
+        rule.example()
+        val jamie = rule.idOf("Jamie Carter"); rule.vmOpen(jamie)
+        rule.type("Idea: built-in bench by the window")
+        rule.tapDesc("Save")
+        val idea = rule.repo().snap.live.first { it.type == ObjType.IDEA && it.title.contains("bench", true) }
+        assertTrue(rule.repo().snap.neighbours(idea.id).any { it.first.id == jamie })
+    }
+
+    @Test @Config(sdk = [36], qualifiers = "w707dp-h823dp-port-xhdpi")
+    fun mentionAndLinkPicker() {
+        rule.example()
+        rule.type("Price out pendant lights @Home Renovation")
+        rule.tap("link_to")
+        rule.onNodeWithTag("link_search").performTextInput("Priya"); rule.settle()
+        rule.shot("n03_link_picker")
+        rule.onNodeWithText("Priya Shah").performClick(); rule.settle()
+        rule.shot("n04_mention_and_link")
+        rule.tapDesc("Save")
+        val t = rule.repo().snap.live.first { it.title.startsWith("Price out pendant lights") }
+        assertFalse(t.title.contains("@"))
+        val near = rule.repo().snap.neighbours(t.id).map { it.first.id }
+        assertTrue(rule.idOf("Home Renovation") in near)
+        assertTrue(rule.idOf("Priya Shah") in near)
+    }
+
+    @Test @Config(sdk = [36], qualifiers = "w707dp-h823dp-port-xhdpi")
+    fun askShowsAnAnswer() {
+        rule.example()
+        rule.ask("What's late?")
+        rule.onNodeWithTag("answer").assert(hasAnyDescendant(hasText("late", substring = true)))
+        rule.shot("n05_answer")
+    }
+
+    @Test @Config(sdk = [36], qualifiers = "w707dp-h823dp-port-xhdpi")
+    fun boardLines() {
+        rule.example()
+        rule.vm { it.go(com.jmr.atlas.ui.Route.Space("p:" + rule.idOf("Home Renovation"))) }
+        rule.shot("n06_board_badges")
+        rule.vm { it.select(rule.idOf("Jamie Carter")) }
+        rule.shot("n07_board_lines_jamie")
+        rule.vm { it.select(rule.idOf("Jamie Carter")) }
+        rule.vm { it.select(rule.idOf("Order tile samples")) }
+        rule.shot("n08_board_lines_task")
+    }
+
+    @Test @Config(sdk = [36], qualifiers = "w369dp-h905dp-xxhdpi")
+    fun boardLinesCover() {
+        rule.example()
+        rule.vm { it.go(com.jmr.atlas.ui.Route.Space("p:" + rule.idOf("Home Renovation"))) }
+        rule.vm { it.select(rule.idOf("Jamie Carter")) }
+        rule.shot("n09_cover_lines")
+    }
+}

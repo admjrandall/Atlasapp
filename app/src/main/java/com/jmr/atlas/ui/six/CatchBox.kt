@@ -10,9 +10,11 @@ import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.input.TextFieldLineLimits
 import androidx.compose.foundation.text.BasicTextField
-import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.KeyboardArrowRight
 import androidx.compose.material.icons.outlined.*
@@ -80,26 +82,35 @@ private fun CircleButton(icon: ImageVector, desc: String, outlined: Boolean = fa
 @Composable
 fun CatchSheet(vm: AtlasViewModel, snap: Snapshot) {
     val platform = LocalPlatform.current
-    val text by vm.catchText.collectAsState()
+    val text = vm.catchField.text.toString()          // snapshot state: recomposes as you type, no lag
+    LaunchedEffect(text) { vm.textChanged(text) }
     val kindOv by vm.kindOverride.collectAsState()
     val dropped by vm.dropped.collectAsState()
     val dueOff by vm.dueOff.collectAsState()
+    val ctxId by vm.context.collectAsState()
+    val extra by vm.extraLinks.collectAsState()
     val attach by vm.attachOpen.collectAsState()
     val ask by vm.ask.collectAsState()
-    val parsed = remember(text, snap) { if (text.isBlank()) null else vm.parsed(text) }
+    val parsed = remember(text, snap, ctxId) { if (text.isBlank()) null else vm.parsed(text) }
+    var picking by remember { mutableStateOf(false) }
     val focus = remember { FocusRequester() }
     LaunchedEffect(Unit) { runCatching { focus.requestFocus() } }
 
     Box(Modifier.fillMaxSize().testTag("catch_sheet")) {
         Box(Modifier.fillMaxSize().background(Atlas.DeepPlum.copy(alpha = 0.5f)).clickable(interactionSource = remember { MutableInteractionSource() }, indication = null, onClickLabel = "Close") { vm.closeCatch() })
         Column(Modifier.align(Alignment.BottomCenter).fillMaxWidth().imePadding().padding(horizontal = pad).padding(bottom = 14.dp).widthIn(max = 760.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+            val ctx = ctxId?.let { snap.objects[it] }
             when {
+                picking -> LinkPicker(vm, snap, exclude = setOfNotNull(ctxId) + extra) { picking = false }
                 ask is AskState.Thinking -> Bubble("Looking through your things…")
                 ask is AskState.Answer -> AnswerCard(vm, snap, ask as AskState.Answer)
                 parsed == null && attach -> {}
-                parsed == null -> Examples(vm)
+                parsed == null -> Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    if (ctx != null) Bubble("Adding to ${ctx.title}")
+                    Examples(vm, ctx)
+                }
                 parsed.question -> Bubble("Sounds like a question. Send to ask.")
-                else -> Preview(vm, parsed, kindOv ?: parsed.kind, dropped, dueOff)
+                else -> Preview(vm, snap, parsed, vm.kindOf(parsed), ctx, extra, dropped, dueOff) { picking = true }
             }
             AnimatedVisibility(attach, enter = fadeIn(), exit = fadeOut()) {
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -114,11 +125,11 @@ fun CatchSheet(vm: AtlasViewModel, snap: Snapshot) {
                 CircleButton(Icons.Outlined.Add, if (attach) "Hide attachments" else "Add a photo, scan or file", outlined = true, rotate = if (attach) 45f else 0f) { vm.attachOpen.value = !attach }
                 Box(Modifier.weight(1f).heightIn(min = 44.dp).padding(horizontal = 10.dp, vertical = 10.dp), contentAlignment = Alignment.CenterStart) {
                     if (text.isEmpty()) Text(if (LocalWide.current) PLACEHOLDER else "Catch or ask", style = T.input, color = Atlas.Hint, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                    BasicTextField(text, { vm.setCatch(it) }, Modifier.fillMaxWidth().heightIn(max = 140.dp).focusRequester(focus).testTag("catch_input"), textStyle = T.input.copy(color = Atlas.DeepPlum),
+                    BasicTextField(vm.catchField, Modifier.fillMaxWidth().focusRequester(focus).testTag("catch_input"), textStyle = T.input.copy(color = Atlas.DeepPlum),
                         cursorBrush = SolidColor(Atlas.Primary), keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.Sentences, imeAction = ImeAction.Send),
-                        keyboardActions = KeyboardActions(onSend = { vm.send() }))
+                        onKeyboardAction = { vm.send() }, lineLimits = TextFieldLineLimits.MultiLine(1, 5))
                 }
-                CircleButton(Icons.Outlined.Mic, "Talk") { platform.dictate { t -> vm.setCatch((text.trimEnd() + " " + t).trim()) } }
+                CircleButton(Icons.Outlined.Mic, "Talk") { platform.dictate { t -> vm.setCatch((vm.catchText.trimEnd() + " " + t).trim()) } }
                 CircleButton(Icons.Outlined.ArrowUpward, if (parsed?.question == true) "Ask" else "Save", filled = text.isNotBlank(), enabled = text.isNotBlank()) { vm.send() }
             }
         }
@@ -137,9 +148,13 @@ private fun Bubble(text: String) =
     Text(text, style = T.meta.copy(fontSize = 14.sp), color = Atlas.SecondaryText, modifier = Modifier.shadow(6.dp, RoundedCornerShape(18.dp)).clip(RoundedCornerShape(18.dp)).background(Atlas.Background).padding(horizontal = 16.dp, vertical = 10.dp))
 
 @Composable
-private fun Examples(vm: AtlasViewModel) {
-    val inSpace = vm.currentProject != null
-    val ex = if (inSpace) listOf("Order samples by Friday", "Idea: open shelving", "What’s late here?") else listOf("Call the dentist tomorrow", "Idea: a reading nook", "What’s due this week?")
+private fun Examples(vm: AtlasViewModel, ctx: KObject?) {
+    val ex = when (ctx?.type) {
+        ObjType.PERSON -> listOf("Send ${ctx.firstName} the deposit by Friday", "Remember: prefers texts", "What does ${ctx.firstName} owe me?")
+        ObjType.TASK -> listOf("Check the haul-away fee", "Call about it tomorrow", "What’s left on this?")
+        ObjType.PROJECT -> listOf("Order samples by Friday", "Idea: open shelving", "What’s late here?")
+        else -> if (vm.currentProject != null) listOf("Order samples by Friday", "Idea: open shelving", "What’s late here?") else listOf("Call the dentist tomorrow", "Idea: a reading nook", "What’s due this week?")
+    }
     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
         ex.forEach { e ->
             Text(e, style = T.metaStrong.copy(fontSize = 15.sp), color = Atlas.DeepPlum, modifier = Modifier.heightIn(min = 44.dp).shadow(4.dp, RoundedCornerShape(22.dp)).clip(RoundedCornerShape(22.dp))
@@ -150,36 +165,89 @@ private fun Examples(vm: AtlasViewModel) {
 
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
-private fun Preview(vm: AtlasViewModel, p: Sentence.Parsed, kind: Sentence.Kind, dropped: Set<String>, dueOff: Boolean) {
+private fun Preview(vm: AtlasViewModel, s: Snapshot, p: Sentence.Parsed, kind: Sentence.Kind, ctx: KObject?, extra: List<String>, dropped: Set<String>, dueOff: Boolean, onLink: () -> Unit) {
     Column(Modifier.fillMaxWidth().shadow(12.dp, RoundedCornerShape(26.dp)).clip(RoundedCornerShape(26.dp)).background(Atlas.Background).padding(horizontal = 20.dp, vertical = 18.dp).testTag("catch_preview"),
         verticalArrangement = Arrangement.spacedBy(12.dp)) {
-        AtlasDid("Atlas will save this as — tap a part to change it")
+        AtlasDid(if (kind.addsToContext) "Atlas will add this — tap a part to change it" else "Atlas will save this as — tap a part to change it")
         FlowRow(horizontalArrangement = Arrangement.spacedBy(10.dp), verticalArrangement = Arrangement.spacedBy(8.dp), itemVerticalAlignment = Alignment.CenterVertically) {
-            val (kc, ki) = when (kind) { Sentence.Kind.TASK -> Atlas.CoolMint to Atlas.DeepTeal; Sentence.Kind.IDEA -> Atlas.Peach to Atlas.CoralText; Sentence.Kind.NOTE -> Atlas.PowderBlue to Atlas.BlueText }
+            val (kc, ki) = when (kind) {
+                Sentence.Kind.TASK, Sentence.Kind.STEP -> Atlas.CoolMint to Atlas.DeepTeal
+                Sentence.Kind.IDEA -> Atlas.Peach to Atlas.CoralText
+                Sentence.Kind.REMEMBER, Sentence.Kind.UPDATE -> Atlas.PrimaryContainer to Atlas.Primary
+                Sentence.Kind.NOTE -> Atlas.PowderBlue to Atlas.BlueText
+            }
             Box(Modifier.heightIn(min = 38.dp).clip(RoundedCornerShape(12.dp)).background(kc).clickable(role = Role.Button, onClickLabel = "Change type") { vm.cycleKind(kind) }.padding(horizontal = 12.dp).testTag("kind_chip"),
                 contentAlignment = Alignment.Center) { Text(kind.label, style = T.tileLabel.copy(fontSize = 14.sp), color = ki) }
-            Text(if (kind == Sentence.Kind.NOTE) p.raw else p.title, style = T.preview.copy(fontWeight = androidx.compose.ui.text.font.FontWeight.SemiBold), color = Atlas.DeepPlum)
+            Text(if (kind == Sentence.Kind.NOTE || kind == Sentence.Kind.UPDATE || kind == Sentence.Kind.REMEMBER) p.raw.replace(Regex("@(?=\\S)"), "") else p.title, style = T.preview.copy(fontWeight = androidx.compose.ui.text.font.FontWeight.SemiBold), color = Atlas.DeepPlum)
             if (kind == Sentence.Kind.TASK && p.due != null) {
-                Text("due", style = T.preview, color = Atlas.SecondaryText)
+                Word("due")
                 PartChip(com.jmr.atlas.data.Board.whenShort(p.due, java.time.LocalDate.now()).replaceFirstChar { it.uppercase() } + " " + com.jmr.atlas.data.Board.shortDate(p.due), Atlas.PowderBlue, Atlas.BlueText, dueOff,
                     if (dueOff) "Keep the date" else "Drop the date") { vm.dueOff.value = !dueOff }
             }
-            p.space?.let { sp -> Text("in", style = T.preview, color = Atlas.SecondaryText); PartChip(sp.title, Atlas.PrimaryContainer, Atlas.Primary, sp.id in dropped, if (sp.id in dropped) "Put it in ${sp.title}" else "Don't put it in ${sp.title}") { vm.toggleDrop(sp.id) } }
-            if (p.people.isNotEmpty()) {
-                Text("with", style = T.preview, color = Atlas.SecondaryText)
-                p.people.forEach { person -> PartChip(person.firstName, Atlas.CoolMint, Atlas.DeepTeal, person.id in dropped, if (person.id in dropped) "Link ${person.title}" else "Don't link ${person.title}") { vm.toggleDrop(person.id) } }
+            if (ctx != null) {
+                Word(when (kind) { Sentence.Kind.STEP -> "on"; Sentence.Kind.REMEMBER -> "about"; Sentence.Kind.UPDATE -> "for"; else -> "linked to" })
+                PartChip(ctx.title, Atlas.PrimaryContainer, Atlas.Primary, ctx.id in dropped, if (ctx.id in dropped) "Link to ${ctx.title}" else "Don't link to ${ctx.title}") { vm.toggleDrop(ctx.id) }
+            }
+            if (!kind.addsToContext) {
+                p.space?.takeIf { it.id != ctx?.id }?.let { sp -> Word("in"); PartChip(sp.title, Atlas.PrimaryContainer, Atlas.Primary, sp.id in dropped, if (sp.id in dropped) "Put it in ${sp.title}" else "Don't put it in ${sp.title}") { vm.toggleDrop(sp.id) } }
+                val ppl = p.people.filter { it.id != ctx?.id }
+                if (ppl.isNotEmpty()) { Word("with"); ppl.forEach { person -> PartChip(person.firstName, Atlas.CoolMint, Atlas.DeepTeal, person.id in dropped, if (person.id in dropped) "Link ${person.title}" else "Don't link ${person.title}") { vm.toggleDrop(person.id) } } }
+                p.mentions.filter { it.id != ctx?.id }.forEach { m -> PartChip(m.title, Atlas.PowderBlue, Atlas.BlueText, m.id in dropped, if (m.id in dropped) "Link ${m.title}" else "Don't link ${m.title}") { vm.toggleDrop(m.id) } }
+                extra.mapNotNull { s.objects[it] }.forEach { o -> PartChip(o.title + "  ×", Atlas.PowderBlue, Atlas.BlueText, false, "Remove link to ${o.title}") { vm.removeLink(o.id) } }
+                Box(Modifier.heightIn(min = 38.dp).clip(RoundedCornerShape(12.dp)).border(1.5.dp, Atlas.Border, RoundedCornerShape(12.dp)).clickable(role = Role.Button, onClick = onLink).padding(horizontal = 12.dp).testTag("link_to"),
+                    contentAlignment = Alignment.Center) { Text("+ Link to…", style = T.metaStrong.copy(fontSize = 15.sp), color = Atlas.Primary) }
             }
         }
-        if (p.space == null && kind != Sentence.Kind.NOTE) Text("Goes to Today — say “for the kitchen” or name a space to file it.", style = T.meta, color = Atlas.SecondaryText)
+        if (!kind.addsToContext && p.space == null && ctx == null && p.people.isEmpty() && extra.isEmpty()) Text("Goes to Today. Say “for the kitchen”, type @ and a name, or tap Link to file it.", style = T.meta, color = Atlas.SecondaryText)
+    }
+}
+
+@Composable
+private fun Word(t: String) = Text(t, style = T.preview, color = Atlas.SecondaryText)
+
+/** Pick any item to link the line to: search by title, people and projects first. */
+@Composable
+private fun LinkPicker(vm: AtlasViewModel, s: Snapshot, exclude: Set<String>, onDone: () -> Unit) {
+    var q by remember { mutableStateOf("") }
+    val list = remember(q, s) {
+        s.live.filter { it.id !in exclude && it.type != ObjType.COLLECTION && (q.isBlank() || it.title.contains(q, true)) }
+            .sortedWith(compareBy({ when (it.type) { ObjType.PERSON -> 0; ObjType.PROJECT -> 1; else -> 2 } }, { -it.updated })).take(30)
+    }
+    run {
+        Column(Modifier.fillMaxWidth().heightIn(max = 420.dp).shadow(12.dp, RoundedCornerShape(26.dp)).clip(RoundedCornerShape(26.dp)).background(Atlas.Background).padding(18.dp).testTag("link_picker"), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text("Link to…", style = T.band, color = Atlas.DeepPlum, modifier = Modifier.weight(1f))
+                Box(Modifier.heightIn(min = 40.dp).clip(RoundedCornerShape(14.dp)).clickable(role = Role.Button, onClick = onDone).padding(horizontal = 12.dp), contentAlignment = Alignment.Center) {
+                    Text("Done", style = T.metaStrong.copy(fontSize = 15.sp), color = Atlas.Primary) }
+            }
+            Box(Modifier.fillMaxWidth().clip(RoundedCornerShape(16.dp)).background(Atlas.Surface).padding(horizontal = 14.dp, vertical = 12.dp)) {
+                if (q.isEmpty()) Text("Search people, projects, tasks, files…", style = T.input, color = Atlas.Hint)
+                androidx.compose.foundation.text.BasicTextField(q, { q = it }, Modifier.fillMaxWidth().testTag("link_search"), textStyle = T.input.copy(color = Atlas.DeepPlum), singleLine = true, cursorBrush = SolidColor(Atlas.Primary))
+            }
+            Column(Modifier.weight(1f, fill = false).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                list.forEach { o ->
+                    Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(14.dp)).clickable(role = Role.Button) { vm.addLink(o.id); onDone() }.padding(horizontal = 8.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+                        if (o.type == ObjType.PERSON) Face(o, 34.dp) else Box(Modifier.size(34.dp).clip(RoundedCornerShape(10.dp)).background(com.jmr.atlas.ui.theme.accent(o.type).container), contentAlignment = Alignment.Center) {
+                            Icon(com.jmr.atlas.ui.theme.icon(o.type), null, Modifier.size(17.dp), tint = com.jmr.atlas.ui.theme.accent(o.type).content) }
+                        Spacer(Modifier.width(12.dp))
+                        Column(Modifier.weight(1f)) {
+                            Text(o.title, style = T.tileTitle.copy(fontSize = 15.sp), color = Atlas.DeepPlum, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                            Text(o.type.label, style = T.meta.copy(fontSize = 12.sp), color = Atlas.SecondaryText)
+                        }
+                    }
+                }
+                if (list.isEmpty()) Text("Nothing matches.", style = T.meta, color = Atlas.SecondaryText, modifier = Modifier.padding(8.dp))
+            }
+        }
     }
 }
 
 @Composable
 private fun AnswerCard(vm: AtlasViewModel, s: Snapshot, a: AskState.Answer) {
-    Column(Modifier.fillMaxWidth().shadow(12.dp, RoundedCornerShape(26.dp)).clip(RoundedCornerShape(26.dp)).background(Atlas.Background).padding(20.dp).testTag("answer"),
+    Column(Modifier.fillMaxWidth().heightIn(max = 520.dp).shadow(12.dp, RoundedCornerShape(26.dp)).clip(RoundedCornerShape(26.dp)).background(Atlas.Background).verticalScroll(rememberScrollState()).padding(20.dp).testTag("answer"),
         verticalArrangement = Arrangement.spacedBy(12.dp)) {
         Text(a.text, style = T.heroTitle.copy(fontSize = 22.sp, lineHeight = 28.sp, fontWeight = androidx.compose.ui.text.font.FontWeight.Bold), color = Atlas.DeepPlum)
-        val items = a.ids.mapNotNull { s.objects[it] }.take(5)
+        val items = a.ids.mapNotNull { s.objects[it] }.take(6)
         items.forEachIndexed { i, o ->
             val (label, lc) = humanLabel(o, s, java.time.LocalDate.now())
             Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(14.dp)).clickable(role = Role.Button) { vm.closeCatch(); vm.reveal(o.id) }.padding(vertical = 6.dp), verticalAlignment = Alignment.Top) {
@@ -191,6 +259,11 @@ private fun AnswerCard(vm: AtlasViewModel, s: Snapshot, a: AskState.Answer) {
                 Icon(Icons.AutoMirrored.Outlined.KeyboardArrowRight, null, tint = Atlas.Hint)
             }
         }
+        if (a.refining) Row(verticalAlignment = Alignment.CenterVertically) {
+            androidx.compose.material3.CircularProgressIndicator(Modifier.size(14.dp), strokeWidth = 2.dp, color = Atlas.Primary)
+            Spacer(Modifier.width(8.dp)); Text("Asking the on-device model too…", style = T.meta, color = Atlas.SecondaryText)
+        }
+        a.note?.let { Text(it, style = T.meta, color = Atlas.SecondaryText) }
         Row(verticalAlignment = Alignment.CenterVertically) {
             AtlasDid(if (a.byAi) "Answered on this phone by the on-device model" else "Put together on this phone from your things", Modifier.weight(1f))
             if (a.spaceId != null && a.ids.isNotEmpty()) {

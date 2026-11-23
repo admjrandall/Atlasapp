@@ -21,6 +21,10 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeoutOrNull
+import androidx.compose.foundation.text.input.TextFieldState
+import androidx.compose.foundation.text.input.clearText
+import androidx.compose.foundation.text.input.setTextAndPlaceCursorAtEnd
 import java.time.LocalDate
 import java.time.temporal.ChronoUnit
 
@@ -72,7 +76,7 @@ sealed interface AskState {
     data object Idle : AskState
     data object Thinking : AskState
     /** [byAi]: written by the on-device model from [ids]; otherwise put together by Atlas's own rules. */
-    data class Answer(val question: String, val text: String, val ids: List<String>, val byAi: Boolean, val spaceId: String?) : AskState
+    data class Answer(val question: String, val text: String, val ids: List<String>, val byAi: Boolean, val spaceId: String?, val refining: Boolean = false, val note: String? = null) : AskState
 }
 
 class AtlasViewModel(app: Application, private val saved: SavedStateHandle) : AndroidViewModel(app) {
@@ -162,55 +166,120 @@ class AtlasViewModel(app: Application, private val saved: SavedStateHandle) : An
     }
 
     // ---------------------------------------------------------------- the input box: catch or ask
+    /**
+     * The text lives in a [TextFieldState] (snapshot state, edited synchronously by the keyboard) — never in a StateFlow,
+     * which lags the keyboard and makes some keyboards drop or revert what you type.
+     * Source: developer.android.com/develop/ui/compose/text/migrate-state-based (checked 2026-11-23).
+     */
+    val catchField = TextFieldState()
+    val catchText: String get() = catchField.text.toString()
     val catchOpen = MutableStateFlow(false)
-    val catchText = MutableStateFlow("")
     val kindOverride = MutableStateFlow<Sentence.Kind?>(null)
-    /** Parts of the preview you tapped off (space id / person ids) before saving. */
+    /** Parts of the preview you tapped off (space / people / context / mention ids) before saving. */
     val dropped = MutableStateFlow<Set<String>>(emptySet())
     val dueOff = MutableStateFlow(false)
+    /** The item the line will be added to: the page you're on, or the tile selected on a board. */
+    val context = MutableStateFlow<String?>(null)
+    /** Items you picked with "Link to…". */
+    val extraLinks = MutableStateFlow<List<String>>(emptyList())
     val attachOpen = MutableStateFlow(false)
     val ask = MutableStateFlow<AskState>(AskState.Idle)
     private var askJob: Job? = null
+    private var lastText = ""
 
-    fun openCatch(prefill: String = "") { catchText.value = prefill; kindOverride.value = null; dropped.value = emptySet(); dueOff.value = false; attachOpen.value = false; ask.value = AskState.Idle; catchOpen.value = true }
+    fun openCatch(prefill: String = "") {
+        catchField.setTextAndPlaceCursorAtEnd(prefill)
+        context.value = (route as? Route.Item)?.id ?: boardSel.value?.takeIf { route is Route.Space }
+        resetParts(); attachOpen.value = false; ask.value = AskState.Idle; catchOpen.value = true
+    }
     fun closeCatch() { catchOpen.value = false; askJob?.cancel(); ask.value = AskState.Idle; attachOpen.value = false }
-    fun setCatch(t: String) { catchText.value = t; if (ask.value !is AskState.Idle) ask.value = AskState.Idle; kindOverride.value = null; dropped.value = emptySet(); dueOff.value = false }
-    fun cycleKind(current: Sentence.Kind) { val k = Sentence.Kind.entries; kindOverride.value = k[(k.indexOf(current) + 1) % k.size] }
+    private fun resetParts() { kindOverride.value = null; dropped.value = emptySet(); dueOff.value = false; extraLinks.value = emptyList(); lastText = catchText }
+    /** Called as you type: a new line forgets the choices you made for the old one and any answer shown. */
+    fun textChanged(t: String) {
+        if (t == lastText) return
+        lastText = t
+        if (ask.value !is AskState.Idle) { askJob?.cancel(); ask.value = AskState.Idle }
+        kindOverride.value = null; dueOff.value = false
+    }
+    fun setCatch(t: String) { catchField.setTextAndPlaceCursorAtEnd(t); textChanged(t) }
+    fun cycleKind(current: Sentence.Kind) { val k = Sentence.kindsFor(contextObj); kindOverride.value = k[(k.indexOf(current).coerceAtLeast(0) + 1) % k.size] }
     fun toggleDrop(id: String) { dropped.value = dropped.value.let { if (id in it) it - id else it + id } }
+    fun addLink(id: String) { if (id != context.value && id !in extraLinks.value) extraLinks.value = extraLinks.value + id }
+    fun removeLink(id: String) { extraLinks.value = extraLinks.value - id }
+
+    val contextObj: KObject? get() = context.value?.let { repo.snap.objects[it] }?.takeIf { !it.trashed }
 
     /** The space you're looking at, used as the default home for what you type. */
     val currentProject: String? get() = (route as? Route.Space)?.space?.takeIf { it.startsWith("p:") }?.removePrefix("p:")
-        ?: (route as? Route.Item)?.id?.let { id -> repo.snap.objects[id]?.let { Briefing.projectOf(repo.snap, it)?.id } }
+        ?: contextObj?.let { if (it.type == ObjType.PROJECT) it.id else Briefing.projectOf(repo.snap, it)?.id }
 
-    fun parsed(text: String = catchText.value): Sentence.Parsed = Sentence.parse(text, repo.snap, LocalDate.now(), currentProject)
+    fun parsed(text: String = catchText): Sentence.Parsed = Sentence.parse(text, repo.snap, LocalDate.now(), currentProject)
+
+    /** The kind a line will be saved as: your choice, else what it reads as — a checklist step when you're on a task. */
+    fun kindOf(p: Sentence.Parsed): Sentence.Kind = kindOverride.value
+        ?: if (contextObj?.type == ObjType.TASK && p.due == null && p.kind != Sentence.Kind.IDEA && context.value !in dropped.value) Sentence.Kind.STEP else p.kind
 
     fun send() {
-        val text = catchText.value.trim(); if (text.isEmpty()) return
+        val text = catchText.trim(); if (text.isEmpty()) return
         val p = parsed(text)
         if (p.question) { askNow(text); return }
         save(p)
     }
 
+    private fun relFor(child: ObjType, parent: KObject) = when {
+        parent.type == ObjType.PROJECT || parent.type == ObjType.COLLECTION -> RelType.BELONGS_TO
+        parent.type == ObjType.PERSON && child == ObjType.NOTE -> RelType.DISCUSSED_WITH
+        parent.type == ObjType.TASK && child == ObjType.TASK -> RelType.FOLLOW_UP_TO
+        else -> RelType.RELATED_TO
+    }
+
     private fun save(p: Sentence.Parsed) {
-        val kind = kindOverride.value ?: p.kind
-        val space = p.space?.takeIf { it.id !in dropped.value }
-        val people = p.people.filter { it.id !in dropped.value }
+        val kind = kindOf(p)
+        val drop = dropped.value
+        val ctx = contextObj?.takeIf { it.id !in drop }
+        val space = p.space?.takeIf { it.id !in drop }
+        val people = p.people.filter { it.id !in drop }
+        val links = (listOfNotNull(ctx, space) + people + p.mentions.filter { it.id !in drop } + extraLinks.value.mapNotNull { repo.snap.objects[it] }).distinctBy { it.id }
         val due = if (dueOff.value) null else p.due
-        val created: String? = runCatching {
-            when (kind) {
-                Sentence.Kind.NOTE -> {
-                    val capId = repo.captureText(p.raw)
-                    val noteId = repo.snap.captures.firstOrNull { it.id == capId }?.noteId
-                    noteId?.let { n -> space?.let { repo.link(n, it.id, RelType.BELONGS_TO) }; people.forEach { repo.link(n, it.id, RelType.DISCUSSED_WITH) } }
-                    viewModelScope.launch(Dispatchers.Default) { processCapture(capId) }
-                    noteId
+        val result: Pair<String, () -> Unit>? = runCatching<Pair<String, () -> Unit>?> {
+            when {
+                kind.addsToContext && ctx == null -> { say("Open the item you want to add this to, or pick another kind."); null }
+                kind == Sentence.Kind.STEP -> {
+                    val d = Detail(objectId = ctx!!.id, kind = DetailKind.STEP, value = p.title, sort = repo.snap.detailsOf(ctx.id, DetailKind.STEP).size)
+                    repo.putDetail(d, "Step added"); "Step added to ${ctx.title}" to { repo.deleteDetail(d.id) }
                 }
-                else -> repo.create(KObject(type = kind.type, title = p.title, body = if (p.title != p.raw) p.raw else "", due = if (kind == Sentence.Kind.TASK) due else null),
-                    listOfNotNull(space?.let { it.id to RelType.BELONGS_TO }) + people.map { it.id to RelType.RELATED_TO })
+                kind == Sentence.Kind.REMEMBER -> {
+                    val d = Detail(objectId = ctx!!.id, kind = DetailKind.REMEMBER, value = p.raw.replace(Regex("^(remember|note)[:,]?\\s*", RegexOption.IGNORE_CASE), "").replaceFirstChar { it.uppercase() })
+                    repo.putDetail(d, "Added a thing to remember"); "Saved to ${ctx.firstName}’s things to remember" to { repo.deleteDetail(d.id) }
+                }
+                kind == Sentence.Kind.UPDATE -> {
+                    repo.postUpdate(ctx!!.id, p.raw, ctx.health ?: Health.ON_TRACK)
+                    val d = repo.snap.detailsOf(ctx.id, DetailKind.UPDATE).maxByOrNull { it.created }
+                    "Update posted to ${ctx.title}" to { d?.let { repo.deleteDetail(it.id) } }
+                }
+                kind == Sentence.Kind.NOTE -> {
+                    val capId = repo.captureText(p.raw.replace(Regex("@(?=\\S)"), ""))
+                    val noteId = repo.snap.captures.firstOrNull { it.id == capId }?.noteId ?: error("note not saved")
+                    links.forEach { repo.link(noteId, it.id, relFor(ObjType.NOTE, it)) }
+                    viewModelScope.launch(Dispatchers.Default) { processCapture(capId) }
+                    where(links) to { repo.trash(noteId) }
+                }
+                else -> {
+                    val id = repo.create(KObject(type = kind.type, title = p.title, body = if (p.title != p.raw) p.raw else "", due = if (kind == Sentence.Kind.TASK) due else null),
+                        links.map { it.id to relFor(kind.type, it) })
+                    where(links) to { repo.trash(id) }
+                }
             }
         }.getOrElse { say("Couldn't save — ${it.message}"); null }
-        closeCatch(); catchText.value = ""
-        created?.let { id -> say("Saved" + (space?.let { " to ${it.title}" } ?: " to Today")) { repo.trash(id) } }
+        if (result != null) {
+            closeCatch(); catchField.clearText(); lastText = ""
+            say(result.first, result.second)
+        }
+    }
+
+    private fun where(links: List<KObject>): String {
+        val p = links.firstOrNull { it.type == ObjType.PROJECT }; val other = links.firstOrNull { it.type != ObjType.PROJECT }
+        return when { other != null && p != null -> "Saved to ${p.title}, linked to ${other.title}"; other != null -> "Saved, linked to ${other.title}"; p != null -> "Saved to ${p.title}"; else -> "Saved to Today" }
     }
 
     private fun askNow(question: String) {
@@ -218,15 +287,19 @@ class AtlasViewModel(app: Application, private val saved: SavedStateHandle) : An
         ask.value = AskState.Thinking
         askJob = viewModelScope.launch {
             val s = repo.snap
-            val (basis, rule) = withContext(Dispatchers.Default) { gather(question, s) }
-            val useAi = settings.aiMode == AiMode.ON_DEVICE && ai.status.value == Ai.Status.Ready && basis.isNotEmpty()
-            val result = if (useAi) runCatching { ai.answer(question, basis, s) }.getOrNull()?.takeIf { it.text.isNotBlank() } else null
-            val spaceId = commonProject(s, result?.ids?.ifEmpty { null } ?: rule.second)
-            ask.value = if (result != null) AskState.Answer(question, result.text, result.ids.ifEmpty { basis.take(4).map { it.id } }, true, spaceId)
-            else AskState.Answer(question, rule.first, rule.second, false, spaceId)
+            val (basis, rule) = runCatching { withContext(Dispatchers.Default) { gather(question, s) } }
+                .getOrElse { emptyList<KObject>() to ("Couldn't search just now — ${it.message?.take(60)}" to emptyList()) }
+            val canAi = settings.aiMode == AiMode.ON_DEVICE && ai.status.value == Ai.Status.Ready && basis.isNotEmpty()
+            val ruleSpace = commonProject(s, rule.second)
+            // Atlas's own answer shows at once; the on-device model refines it if it's on and answers in time
+            ask.value = AskState.Answer(question, rule.first, rule.second, false, ruleSpace, refining = canAi)
+            if (!canAi) return@launch
+            val ai = withTimeoutOrNull(45_000) { runCatching { ai.answer(question, basis, s) }.getOrNull() }?.takeIf { it.text.isNotBlank() }
+            val cur = ask.value as? AskState.Answer ?: return@launch
+            ask.value = if (ai != null) AskState.Answer(question, ai.text, ai.ids.ifEmpty { rule.second }, true, commonProject(s, ai.ids.ifEmpty { rule.second }) ?: ruleSpace)
+            else cur.copy(refining = false, note = "The on-device model didn’t answer in time — this is Atlas’s own answer.")
         }
     }
-
     private fun commonProject(s: Snapshot, ids: List<String>): String? =
         ids.mapNotNull { id -> s.objects[id]?.let { if (it.type == ObjType.PROJECT) it else Briefing.projectOf(s, it) }?.id }.groupingBy { it }.eachCount().maxByOrNull { it.value }?.key
 

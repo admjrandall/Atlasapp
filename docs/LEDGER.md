@@ -2,6 +2,16 @@
 
 Honest status. "Verified" = automated test or inspected screenshot (Robolectric). Nothing has run on a physical Fold 6 yet; items marked **device-only** can only be proven there.
 
+## 0.6.1 — input box, toasts, board lines
+
+| Reported | Cause | Fix | Test |
+|---|---|---|---|
+| Toasts never leave | The timer ran inside `LaunchedEffect(msg)`, which clearing `msg` cancelled | Two effects: copy and clear; the wait is keyed on the toast. Tap to dismiss | `InputUiTest.toastGoesAway` |
+| Typing or asking doesn't work | Value-based text field mirrored through a StateFlow; real keyboards desync | `TextFieldState` + `BasicTextField(state=…)` | `catchAndAsk`, `askShowsAnAnswer` |
+| Can't add to an existing item | The input box had no idea what was open | Context = open item or selected card. On a task a line becomes a Step; on a person, Remember; on a project, Update; else linked. `@name` mentions; "+ Link to…" picker | `lineOnATaskBecomesAStep`, `ideaOnAPersonIsLinkedToThem`, `mentionAndLinkPicker` |
+| Ask felt dead | Waited on the model | Atlas's own answer shows at once; on-device model refines within 45 s or says it didn't | `askShowsAnAnswer` |
+| Board lines unclear | Bezier edge to edge, crossing cards | Routed through gutters (fewest cards crossed), rounded elbows, halo and glow, draw-in, labels ("assigned to", "blocks"), dashed when Atlas made the link; link-count badges | `boardLines`, `boardLinesCover` |
+
 ## 0.6 — redesign (Home · Space · item page · one input box)
 | Area | What works | Evidence |
 |---|---|---|

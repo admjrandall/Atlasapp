@@ -17,6 +17,7 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.IntSize
+import androidx.compose.material.icons.outlined.Link
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
@@ -47,6 +48,9 @@ import java.time.LocalDate
 import java.time.ZoneId
 
 enum class TileState { Normal, Selected, Related, Faded, Ringed }
+
+/** How many other cards on this board each card is linked to; the board provides it so tiles can show a small badge. */
+val LocalLinkCounts = androidx.compose.runtime.staticCompositionLocalOf<Map<String, Int>> { emptyMap() }
 
 /** What a tile is called in one short label above its title ("LATE · 2 DAYS", "VOICE NOTE · 18 NOV"). */
 fun tileLabel(o: KObject, s: Snapshot, today: LocalDate): Pair<String, Color> {
@@ -106,9 +110,9 @@ fun Tile(vm: AtlasViewModel, o: KObject, today: LocalDate, state: TileState, mod
     val s = vm.repo.snap
     val bring = remember { BringIntoViewRequester() }
     var size by remember { mutableStateOf(IntSize.Zero) }
-    val margin = with(LocalDensity.current) { 120.dp.toPx() }
+    val margin = with(LocalDensity.current) { (if (LocalWide.current) 120.dp else 440.dp).toPx() }   // narrow: room below for the cards it links to
     // a tile selected from elsewhere (Home, an answer) scrolls into view, clear of the bar at the bottom
-    LaunchedEffect(state == TileState.Selected) { if (state == TileState.Selected && size != IntSize.Zero) bring.bringIntoView(Rect(0f, -margin / 3, size.width.toFloat(), size.height + margin)) }
+    LaunchedEffect(state == TileState.Selected) { if (state == TileState.Selected && size != IntSize.Zero) bring.bringIntoView(Rect(0f, -40f, size.width.toFloat(), size.height + margin)) }
     val alpha by animateFloatAsState(if (state == TileState.Faded) 0.18f else 1f, label = "fade")
     val scale by animateFloatAsState(if (state == TileState.Selected) 1.03f else 1f, label = "lift")
     val bg = when (o.type) { ObjType.IDEA -> Atlas.Peach; else -> Atlas.Surface }
@@ -116,6 +120,7 @@ fun Tile(vm: AtlasViewModel, o: KObject, today: LocalDate, state: TileState, mod
     val ring = when (state) {
         TileState.Selected -> Modifier.border(3.dp, Atlas.Primary, shape)
         TileState.Ringed -> Modifier.border(3.dp, Atlas.Coral, shape)
+        TileState.Related -> Modifier.border(2.dp, Atlas.Primary.copy(alpha = 0.45f), shape)
         else -> Modifier
     }
     Box(modifier.onGloballyPositioned { place(o.id, it); size = it.size }.bringIntoViewRequester(bring).scale(scale).alpha(alpha)
@@ -129,6 +134,14 @@ fun Tile(vm: AtlasViewModel, o: KObject, today: LocalDate, state: TileState, mod
             o.type == ObjType.IMAGE -> ImageContent(o)
             else -> Content(o, s, today)
         }
+        val links = LocalLinkCounts.current[o.id] ?: 0
+        if (links > 0 && (state == TileState.Normal || state == TileState.Ringed) && !compactAnchor)
+            Row(Modifier.align(Alignment.TopEnd).padding(8.dp).clip(RoundedCornerShape(10.dp)).background(Atlas.Chip).padding(horizontal = 6.dp, vertical = 2.dp)
+                .semantics { contentDescription = "Linked to $links on this board" }, verticalAlignment = Alignment.CenterVertically) {
+                Icon(Icons.Outlined.Link, null, Modifier.size(12.dp), tint = Atlas.Primary)
+                Spacer(Modifier.width(3.dp))
+                Text("$links", style = T.metaStrong.copy(fontSize = 11.sp), color = Atlas.Primary)
+            }
     }
 }
 

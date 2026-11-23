@@ -1,6 +1,17 @@
 package com.jmr.atlas.ui.six
 
 import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.tween
+import androidx.compose.ui.geometry.CornerRadius
+import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.graphics.PathEffect
+import androidx.compose.ui.graphics.PathMeasure
+import androidx.compose.ui.graphics.StrokeJoin
+import androidx.compose.ui.graphics.drawscope.DrawScope
+import androidx.compose.ui.text.drawText
+import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -66,10 +77,13 @@ fun SpaceScreen(vm: AtlasViewModel, snap: Snapshot, key: String) {
 
     val onBoard = remember(bands) { bands.flatMap { b -> b.items + listOfNotNull(b.anchor) }.map { it.id }.toSet() }
     val selected = sel?.takeIf { it in onBoard }
-    val related = remember(snap, selected) { selected?.let { s -> snap.neighbours(s, includeProposed = false).map { it.first.id }.filter { it in onBoard && it != s }.toSet() }.orEmpty() }
+    val links = remember(snap, selected) { selected?.let { s -> snap.neighbours(s, includeProposed = false).filter { it.first.id in onBoard && it.first.id != s }.associate { it.first.id to it.second } }.orEmpty() }
+    val related = links.keys
     val ringed = hl?.second?.filter { it in onBoard }?.toSet()?.takeIf { it.isNotEmpty() && selected == null }
     val expanded = remember(key) { mutableStateMapOf<String, Boolean>() }
+    val linkCounts = remember(snap, onBoard) { onBoard.associateWith { id -> snap.neighbours(id, includeProposed = false).count { it.first.id in onBoard && it.first.id != id } } }
 
+    CompositionLocalProvider(LocalLinkCounts provides linkCounts) {
     Column(Modifier.fillMaxSize().testTag("space")) {
         SpaceHeader(vm, snap, project, kind, today, wide)
         if (ringed != null && hl != null) {
@@ -98,10 +112,11 @@ fun SpaceScreen(vm: AtlasViewModel, snap: Snapshot, key: String) {
                             }
                         }
                     }
-                    if (selected != null) Threads(rects, origin, selected, related)
+                    if (selected != null) Threads(rects, origin, selected, links)
                 }
             }
         }
+    }
     }
     // the dark caption bar replaces the input box while something is selected (Root draws it)
 }
@@ -249,30 +264,175 @@ private fun MoreTile(text: String, modifier: Modifier, onClick: () -> Unit) =
         Text(text, style = T.metaStrong.copy(fontSize = 14.sp), color = Atlas.Primary)
     }
 
-/** Lines from the selected tile to each tile it's linked to, edge to edge, drawn over the board. */
+/**
+ * Lines from the selected tile to each tile it's linked to. Each line is routed through the gutters between tiles
+ * (the route that crosses the fewest other tiles wins), drawn with rounded elbows over a white halo so it stays readable
+ * on any band, draws itself in, and carries what the link means ("assigned to", "blocks"). Links Atlas made are dashed.
+ */
 @Composable
-private fun BoxScope.Threads(rects: Map<String, Rect>, origin: Offset, selected: String, related: Set<String>) {
+private fun BoxScope.Threads(rects: Map<String, Rect>, origin: Offset, selected: String, links: Map<String, Relation>) {
     val a = rects[selected] ?: return
-    val alpha by animateFloatAsState(1f, label = "threads")
+    val progress = remember { Animatable(0f) }
+    LaunchedEffect(selected, links.keys) { progress.snapTo(0f); progress.animateTo(1f, tween(560, easing = FastOutSlowInEasing)) }
     val density = LocalDensity.current
-    val stroke = with(density) { 3.dp.toPx() }
-    val dot = with(density) { 6.dp.toPx() }
-    Canvas(Modifier.matchParentSize().semantics { contentDescription = "Lines to ${related.size} connected items" }) {
+    val measurer = rememberTextMeasurer()
+    val labelStyle = T.tileLabel.copy(fontSize = 11.sp, letterSpacing = 0.3.sp)
+    val desc = links.values.joinToString(", ") { linkLabel(it, selected) ?: "linked" }
+    Canvas(Modifier.matchParentSize().semantics { contentDescription = "Lines to ${links.size} connected items: $desc" }) {
+        val dp = density.density
+        val g = 10f * dp
         val sa = a.translate(-origin)
-        related.mapNotNull { rects[it]?.translate(-origin) }.forEach { sb ->
-            val horizontal = sb.left >= sa.right - 1 || sb.right <= sa.left + 1
-            val (p0, p1) = if (horizontal) {
-                if (sb.left >= sa.right - 1) Offset(sa.right, sa.center.y) to Offset(sb.left, sb.center.y) else Offset(sa.left, sa.center.y) to Offset(sb.right, sb.center.y)
-            } else {
-                if (sb.top >= sa.bottom) Offset(sa.center.x, sa.bottom) to Offset(sb.center.x, sb.top) else Offset(sa.center.x, sa.top) to Offset(sb.center.x, sb.bottom)
+        val others = rects.filterKeys { it != selected }.mapValues { it.value.translate(-origin) }
+        val labels = mutableListOf<Triple<List<Offset>, String, Color>>()
+        links.entries.sortedBy { others[it.key]?.top ?: 0f }.forEachIndexed { i, (id, rel) ->
+            val sb = others[id] ?: return@forEachIndexed
+            val lane = ((i % 3) - 1) * 3f * dp
+            val obstacles = others.filterKeys { it != id }.values.toList()
+            val pts = bestRoute(sa, sb, obstacles, g, lane, (i % 3 - 1) * 12f * dp)
+            val path = rounded(pts, 14f * dp)
+            val color = when (rel.type) { RelType.DEPENDS_ON -> Atlas.CoralText; RelType.ASSIGNED_TO, RelType.DISCUSSED_WITH -> Atlas.DeepTeal; else -> Atlas.Primary }
+            val pm = PathMeasure().apply { setPath(path, false) }
+            val seg = Path().also { pm.getSegment(0f, pm.length * progress.value, it, true) }
+            val dashed = rel.origin != Origin.USER
+            drawPath(seg, color.copy(alpha = 0.14f), style = Stroke(16f * dp, cap = StrokeCap.Round, join = StrokeJoin.Round))
+            drawPath(seg, Color.White.copy(alpha = 0.95f), style = Stroke(8f * dp, cap = StrokeCap.Round, join = StrokeJoin.Round))
+            drawPath(seg, color, style = Stroke(2.75f * dp, cap = StrokeCap.Round, join = StrokeJoin.Round,
+                pathEffect = if (dashed) PathEffect.dashPathEffect(floatArrayOf(12f * dp, 5f * dp)) else null))
+            // ports: where the line leaves the selected tile and where it lands
+            port(pts.first(), color, dp)
+            if (progress.value > 0.97f) port(pts.last(), color, dp)
+            // what the link means, on the longest straight run so it never sits on a corner
+            linkLabel(rel, selected)?.let { labels += Triple(pts, it, color) }
+        }
+        // labels last, so no line or port ever sits on top of one; nudged apart when two would overlap
+        if (progress.value > 0.6f) {
+            val alpha = ((progress.value - 0.6f) / 0.4f).coerceIn(0f, 1f)
+            val placed = mutableListOf<Rect>()
+            labels.forEach { (pts, text, color) ->
+                val lay = measurer.measure(text, labelStyle)
+                val w = lay.size.width + 14f * dp; val h = lay.size.height + 6f * dp
+                // centred on the line, or just to its left or right: whichever covers the least of the other cards
+                fun covered(r: Rect) = others.values.sumOf { o -> val i = o.intersect(r); if (i.width > 0 && i.height > 0) (i.width * i.height).toDouble() else 0.0 } +
+                    placed.sumOf { o -> val i = o.intersect(r); if (i.width > 0 && i.height > 0) 1e7 else 0.0 }
+                // every straight run long enough to hold it; on each, centred or to either side; covering least text wins
+                val spots = (0 until pts.size - 1).filter { (pts[it + 1] - pts[it]).getDistance() > 24f * dp }.ifEmpty { listOf(0) }.flatMap { k ->
+                    val m = Offset((pts[k].x + pts[k + 1].x) / 2, (pts[k].y + pts[k + 1].y) / 2)
+                    val offs = listOf(Offset(-w / 2, -h / 2), Offset(-w / 2, -h - 3f * dp), Offset(-w / 2, 3f * dp), Offset(-w + 4f * dp, -h / 2), Offset(-4f * dp, -h / 2))
+                    offs.map { o -> Rect(m + o, Size(w, h)) }
+                }
+                var r = spots.minBy { covered(it) }
+                var tries = 0
+                while (placed.any { it.overlaps(r) } && tries++ < 6) r = r.translate(0f, h + 4f * dp)
+                placed += r
+                drawRoundRect(Color.White.copy(alpha = alpha), r.topLeft, r.size, CornerRadius(h / 2))
+                drawRoundRect(color.copy(alpha = alpha), r.topLeft, r.size, CornerRadius(h / 2), style = Stroke(1.25f * dp))
+                drawText(lay, color.copy(alpha = alpha), Offset(r.left + 7f * dp, r.top + 3f * dp))
             }
-            val path = Path().apply {
-                moveTo(p0.x, p0.y)
-                if (horizontal) { val mx = (p0.x + p1.x) / 2; cubicTo(mx, p0.y, mx, p1.y, p1.x, p1.y) } else { val my = (p0.y + p1.y) / 2; cubicTo(p0.x, my, p1.x, my, p1.x, p1.y) }
-            }
-            drawPath(path, Atlas.Primary.copy(alpha = alpha), style = Stroke(width = stroke, cap = StrokeCap.Round))
-            drawCircle(Color.White, dot + stroke / 2, p1); drawCircle(Atlas.Primary, dot - stroke / 3, p1)
-            drawCircle(Color.White, dot + stroke / 2, p0); drawCircle(Atlas.Primary, dot - stroke / 3, p0)
         }
     }
 }
+
+/** "assigned to", "blocks", "from" — read from the selected tile's side. Plain "related" links carry no label. */
+private fun linkLabel(r: Relation, selected: String): String? {
+    if (r.type == RelType.RELATED_TO) return null
+    val out = r.sourceId == selected
+    return when (r.type) {
+        RelType.ASSIGNED_TO -> if (out) "assigned to" else "owns"
+        RelType.DEPENDS_ON -> if (out) "waits on" else "blocks"
+        RelType.DERIVED_FROM -> if (out) "from" else "source"
+        RelType.DISCUSSED_WITH -> "discussed"
+        RelType.BELONGS_TO, RelType.PART_OF -> if (out) "part of" else "includes"
+        RelType.REFERENCES -> if (out) "cites" else "cited by"
+        RelType.SUPPORTS -> if (out) "supports" else "backed by"
+        RelType.FOLLOW_UP_TO -> if (out) "follows" else "followed by"
+        RelType.DUPLICATE_OF -> "same as"
+        RelType.RELATED_TO -> null
+    }
+}
+
+private fun DrawScope.port(p: Offset, color: Color, dp: Float) {
+    drawCircle(Color.White, 6.5f * dp, p); drawCircle(color, 4f * dp, p)
+}
+
+/** Candidate orthogonal routes between two tiles; the one crossing the fewest other tiles (then shortest) wins. */
+private fun bestRoute(a: Rect, b: Rect, obstacles: List<Rect>, g: Float, lane: Float, spread: Float): List<Offset> {
+    val c = mutableListOf<List<Offset>>()
+    val ax = a.center.x + spread.coerceIn(-a.width / 3, a.width / 3); val bx = b.center.x
+    val sameRow = kotlin.math.abs(a.center.y - b.center.y) < minOf(a.height, b.height) / 2
+    if (sameRow) {
+        val y = (maxOf(a.top, b.top) + minOf(a.bottom, b.bottom)) / 2 + lane
+        if (b.left >= a.right) c += listOf(Offset(a.right, y), Offset(b.left, y)) else if (b.right <= a.left) c += listOf(Offset(a.left, y), Offset(b.right, y))
+        val under = maxOf(a.bottom, b.bottom) + g / 2 + lane
+        c += listOf(Offset(ax, a.bottom), Offset(ax, under), Offset(bx, under), Offset(bx, b.bottom))
+        val over = minOf(a.top, b.top) - g / 2 - lane
+        c += listOf(Offset(ax, a.top), Offset(ax, over), Offset(bx, over), Offset(bx, b.top))
+    } else {
+        val down = b.center.y > a.center.y
+        val ay0 = if (down) a.bottom else a.top; val by0 = if (down) b.top else b.bottom
+        val s = if (down) 1 else -1
+        val y1 = ay0 + s * (g / 2 + lane); val y2 = by0 - s * (g / 2 - lane)
+        c += listOf(Offset(ax, ay0), Offset(ax, y1), Offset(bx, y1), Offset(bx, by0))
+        c += listOf(Offset(ax, ay0), Offset(ax, y2), Offset(bx, y2), Offset(bx, by0))
+        for (x in listOf(b.left - g / 2 - lane, b.right + g / 2 + lane, a.left - g / 2 - lane, a.right + g / 2 + lane))
+            c += listOf(Offset(ax, ay0), Offset(ax, y1), Offset(x, y1), Offset(x, y2), Offset(bx, y2), Offset(bx, by0))
+        // side exit when the tiles don't share columns
+        if (b.left >= a.right || b.right <= a.left) {
+            val right = b.left >= a.right
+            val sx = if (right) a.right else a.left; val ex = if (right) b.left else b.right
+            val xm = (sx + ex) / 2 + lane
+            c += listOf(Offset(sx, a.center.y + lane), Offset(xm, a.center.y + lane), Offset(xm, b.center.y), Offset(ex, b.center.y))
+        }
+    }
+    /** A vertical first or last run leaves/enters through the side of the tile that faces the rest of the route. */
+    fun snap(r: List<Offset>): List<Offset> {
+        if (r.size < 3) return r
+        val m = r.toMutableList()
+        if (m[0].x == m[1].x && m[0].y in listOf(a.top, a.bottom)) {
+            val y = if (m[1].y < a.center.y) a.top else a.bottom; m[0] = Offset(m[0].x, y)
+        }
+        val n = m.size - 1
+        if (m[n].x == m[n - 1].x && m[n].y in listOf(b.top, b.bottom)) {
+            val y = if (m[n - 1].y < b.center.y) b.top else b.bottom; m[n] = Offset(m[n].x, y)
+        }
+        return m
+    }
+    fun cost(r: List<Offset>): Float {
+        var hits = 0; var len = 0f
+        for (k in 0 until r.size - 1) {
+            val p = r[k]; val q = r[k + 1]
+            len += (q - p).getDistance()
+            val seg = Rect(minOf(p.x, q.x) - 1f, minOf(p.y, q.y) - 1f, maxOf(p.x, q.x) + 1f, maxOf(p.y, q.y) + 1f)
+            hits += obstacles.count { o -> o.deflate(3f).overlaps(seg) }
+            // the route may touch its own two tiles only at its ports
+            if (k > 0) hits += if (a.deflate(3f).overlaps(seg)) 1 else 0
+            if (k < r.size - 2) hits += if (b.deflate(3f).overlaps(seg)) 1 else 0
+        }
+        return hits * 100_000f + len + r.size * 40f
+    }
+    return c.map { snap(it) }.minBy { cost(it) }
+}
+
+/** A polyline with rounded elbows. */
+private fun rounded(pts: List<Offset>, radius: Float): Path {
+    val p = pts.fold(mutableListOf<Offset>()) { acc, o -> if (acc.isEmpty() || (acc.last() - o).getDistance() > 0.5f) acc += o; acc }
+    return Path().apply {
+        if (p.isEmpty()) return@apply
+        moveTo(p[0].x, p[0].y)
+        for (i in 1 until p.size - 1) {
+            val prev = p[i - 1]; val cur = p[i]; val next = p[i + 1]
+            val d1 = (cur - prev).getDistance(); val d2 = (next - cur).getDistance()
+            val r = minOf(radius, d1 / 2, d2 / 2)
+            val inP = cur - (cur - prev) * (r / d1); val outP = cur + (next - cur) * (r / d2)
+            lineTo(inP.x, inP.y); quadraticTo(cur.x, cur.y, outP.x, outP.y)
+        }
+        lineTo(p.last().x, p.last().y)
+    }
+}
+
+private fun longestMid(pts: List<Offset>): Pair<Offset, Boolean> {
+    var best = 0; var bl = -1f
+    for (k in 0 until pts.size - 1) { val l = (pts[k + 1] - pts[k]).getDistance(); if (l > bl) { bl = l; best = k } }
+    val p = pts[best]; val q = pts[best + 1]
+    return Offset((p.x + q.x) / 2, (p.y + q.y) / 2) to (kotlin.math.abs(q.x - p.x) > kotlin.math.abs(q.y - p.y))
+}
+

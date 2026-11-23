@@ -87,8 +87,9 @@ fun PartChip(text: String, container: Color, ink: Color, off: Boolean, desc: Str
 
 /** The result line at the top of the screen, with Undo when the action can be undone. */
 @Composable
-fun Toast(text: String, onUndo: (() -> Unit)?, modifier: Modifier = Modifier) =
-    Row(modifier.shadow(12.dp, RoundedCornerShape(18.dp)).clip(RoundedCornerShape(18.dp)).background(Atlas.DeepTeal).padding(start = 18.dp, end = 6.dp, top = 6.dp, bottom = 6.dp).testTag("toast"),
+fun Toast(text: String, onUndo: (() -> Unit)?, modifier: Modifier = Modifier, onDismiss: () -> Unit = {}) =
+    Row(modifier.shadow(12.dp, RoundedCornerShape(18.dp)).clip(RoundedCornerShape(18.dp)).background(Atlas.DeepTeal)
+        .clickable(onClickLabel = "Dismiss", onClick = onDismiss).padding(start = 18.dp, end = 6.dp, top = 6.dp, bottom = 6.dp).testTag("toast"),
         verticalAlignment = Alignment.CenterVertically) {
         Text(text, style = T.metaStrong.copy(fontSize = 14.sp), color = Color.White, modifier = Modifier.padding(vertical = 8.dp).widthIn(max = 420.dp), maxLines = 2)
         if (onUndo != null) {

@@ -44,9 +44,10 @@ fun AtlasRoot(vm: AtlasViewModel, locked: MutableStateFlow<Boolean>) {
     val catchOpen by vm.catchOpen.collectAsState()
     val sel by vm.boardSel.collectAsState()
     var toast by remember { mutableStateOf<AtlasViewModel.Msg?>(null) }
-    LaunchedEffect(msg) {
-        msg?.let { m -> toast = m; vm.messages.value = null; delay(if (m.undo != null) 5000 else 3200); if (toast === m) toast = null }
-    }
+    // Copy the message out, then clear it — clearing changes msg, so the wait can't live in this effect (it would be cancelled).
+    LaunchedEffect(msg) { msg?.let { m -> toast = m; vm.messages.value = null } }
+    // The wait lives here, keyed on the toast itself: a newer toast restarts it, nothing else cancels it.
+    LaunchedEffect(toast) { val t = toast ?: return@LaunchedEffect; delay(if (t.undo != null) 5000 else 3200); if (toast === t) toast = null }
 
     CompositionLocalProvider(LocalFiles provides vm.repo.files) {
         Box(Modifier.fillMaxSize().background(Atlas.Background)) {
@@ -81,7 +82,7 @@ fun AtlasRoot(vm: AtlasViewModel, locked: MutableStateFlow<Boolean>) {
             }
             AnimatedVisibility(toast != null, Modifier.align(Alignment.TopCenter).windowInsetsPadding(WindowInsets.safeDrawing).padding(top = 10.dp, start = 16.dp, end = 16.dp),
                 enter = fadeIn() + slideInVertically { -it }, exit = fadeOut() + slideOutVertically { -it }) {
-                toast?.let { t -> Toast(t.text, t.undo?.let { u -> { u(); toast = null } }) }
+                toast?.let { t -> Toast(t.text, t.undo?.let { u -> { u(); toast = null } }, onDismiss = { toast = null }) }
             }
         }
     }
