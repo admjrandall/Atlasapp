@@ -12,6 +12,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.*
+import androidx.compose.material.icons.automirrored.outlined.KeyboardArrowRight
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
@@ -84,14 +85,16 @@ fun HomeScreen(vm: AtlasViewModel, snap: Snapshot) {
                 Text("Atlas found ${if (pending == 1) "1 thing" else "$pending things"} to confirm", style = T.metaStrong.copy(fontSize = 14.sp), color = Atlas.DeepPlum)
             }
         }
-        Spacer(Modifier.height(if (wide) 30.dp else 24.dp))
-        if (wide) Row(horizontalArrangement = Arrangement.spacedBy(32.dp)) {
+        Spacer(Modifier.height(if (wide) 22.dp else 18.dp))
+        CoreStrip(vm, snap, today)
+        Spacer(Modifier.height(if (wide) 26.dp else 20.dp))
+        if (wide) Row(horizontalArrangement = Arrangement.spacedBy(28.dp)) {
             Column(Modifier.weight(1f)) { Week(vm, rows, todays, ticked) }
-            Column(Modifier.width(252.dp)) { SpacesColumn(vm, snap, today) }
+            Column(Modifier.width(268.dp)) { SpacesPanel(vm, snap, today) }
         } else {
+            SpaceChips(vm, snap, today)
+            Spacer(Modifier.height(20.dp))
             Week(vm, rows, todays, ticked)
-            Spacer(Modifier.height(26.dp))
-            SpacesRow(vm, snap, today)
         }
     }
 }
@@ -118,7 +121,9 @@ private fun Week(vm: AtlasViewModel, rows: List<Briefing.Agenda>, todays: List<C
         return
     }
     val late = rows.takeWhile { it.late }
-    late.forEach { AgendaRow(vm, it, ticked) }
+    // three or more slipped tasks are one row that opens a quick sort-out, not a wall of red
+    if (late.count { !it.task.done } >= 3) SlippedRow(late.size, late.first().task.title) { vm.go(Route.Space(Board.Kind.TASKS.key)) }
+    else late.forEach { AgendaRow(vm, it, ticked) }
     val platform = com.jmr.atlas.LocalPlatform.current
     todays.forEach { e -> EventRow(e) { platform.launch(Calendars.viewIntent(e.eventId)) } }
     rows.drop(late.size).forEach { AgendaRow(vm, it, ticked) }
@@ -166,13 +171,46 @@ private fun EventRow(e: Calendars.Event, onClick: () -> Unit) {
     }
 }
 
-// ------------------------------------------------------------------ spaces
-private data class Special(val kind: Board.Kind, val icon: ImageVector, val tint: Color)
-private val SPECIAL = listOf(
-    Special(Board.Kind.PEOPLE, Icons.Outlined.People, Atlas.PrimaryContainer), Special(Board.Kind.FILES, Icons.Outlined.Description, Atlas.PowderBlue),
-    Special(Board.Kind.NOTES, Icons.Outlined.Lightbulb, Atlas.Peach), Special(Board.Kind.TASKS, Icons.Outlined.CheckCircle, Atlas.CoolMint),
-    Special(Board.Kind.EVERYTHING, Icons.Outlined.GridView, Atlas.Chip),
+// ------------------------------------------------------------------ core kinds and spaces (design 0.7)
+
+@Composable
+private fun SlippedRow(n: Int, oldest: String, onClick: () -> Unit) =
+    Row(Modifier.fillMaxWidth().padding(vertical = 6.dp).clip(RoundedCornerShape(16.dp)).background(Atlas.LateBg).clickable(role = Role.Button, onClickLabel = "Sort out slipped tasks", onClick = onClick)
+        .padding(horizontal = 14.dp, vertical = 12.dp).testTag("slipped"), verticalAlignment = Alignment.CenterVertically) {
+        Column(Modifier.weight(1f)) {
+            Text("$n slipped", style = T.row.copy(fontWeight = FontWeight.Bold), color = Atlas.LateInk)
+            Text("Oldest: ${oldest.removePrefix("Expect ")}", style = T.meta, color = Atlas.LateInk, maxLines = 1, overflow = TextOverflow.Ellipsis)
+        }
+        Text("Sort out", style = T.metaStrong.copy(fontSize = 14.sp), color = Atlas.LateInk)
+    }
+
+private data class Core(val kind: Board.Kind?, val title: String, val icon: ImageVector)
+private val CORE = listOf(
+    Core(Board.Kind.PEOPLE, "People", Icons.Outlined.People), Core(Board.Kind.TASKS, "Tasks", Icons.Outlined.CheckCircle),
+    Core(Board.Kind.FILES, "Files", Icons.Outlined.Description), Core(Board.Kind.NOTES, "Ideas & notes", Icons.Outlined.Lightbulb), Core(null, "Spaces", Icons.Outlined.Folder),
 )
+
+/** The core kinds in one strip that scrolls sideways, each with its count — so Now stays short however much you keep. */
+@Composable
+private fun CoreStrip(vm: AtlasViewModel, snap: Snapshot, today: LocalDate) {
+    val wide = LocalWide.current
+    val late = remember(snap) { snap.ofType(ObjType.TASK).count { !it.done && !Board.isWaiting(it) && Board.effective(it)?.isBefore(today) == true } }
+    Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).testTag("core_strip"), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+        CORE.forEach { c ->
+            val n = when (c.kind) { null -> Board.allSpaces(snap).size; else -> count(snap, c.kind) }
+            val sub = if (c.kind == Board.Kind.TASKS && late > 0) "$late slipped" else "$n"
+            Column(Modifier.width(if (wide) 150.dp else 112.dp).height(if (wide) 96.dp else 90.dp).shadow(3.dp, RoundedCornerShape(20.dp)).clip(RoundedCornerShape(20.dp)).background(Atlas.Surface)
+                .clickable(role = Role.Button, onClickLabel = "Open ${c.title}") { if (c.kind == null) vm.go(Route.Space(Board.SPACES_KEY)) else vm.go(Route.Space(c.kind.key)) }
+                .padding(14.dp).testTag("core_${c.title}"), verticalArrangement = Arrangement.SpaceBetween) {
+                Icon(c.icon, null, Modifier.size(22.dp), tint = Atlas.DeepPlum)
+                Column {
+                    Text(c.title, style = T.tileTitle.copy(fontSize = if (wide) 16.sp else 15.sp), color = Atlas.DeepPlum, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    Text(sub, style = T.meta.copy(fontSize = 12.sp), color = if (sub.endsWith("slipped")) Atlas.CoralText else Atlas.SecondaryText)
+                }
+            }
+        }
+    }
+}
 
 private fun count(s: Snapshot, k: Board.Kind) = when (k) {
     Board.Kind.PEOPLE -> s.ofType(ObjType.PERSON).size
@@ -182,76 +220,77 @@ private fun count(s: Snapshot, k: Board.Kind) = when (k) {
     Board.Kind.EVERYTHING -> s.live.size
 }
 
+/** Fold open: up to four pinned spaces as tiles, a few more with something this week, then All spaces. */
 @Composable
-private fun SpacesColumn(vm: AtlasViewModel, snap: Snapshot, today: LocalDate) {
-    Eyebrow("Spaces")
+private fun SpacesPanel(vm: AtlasViewModel, snap: Snapshot, today: LocalDate) {
+    val pinned = remember(snap) { Board.pinned(snap, today) }
+    val active = remember(snap) { Board.active(snap, today, pinned.map { it.first.id }.toSet()).take(3) }
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        Eyebrow("Pinned", Modifier.weight(1f))
+        if (pinned.any { it.second }) Text("busiest first", style = T.meta.copy(fontSize = 12.sp), color = Atlas.Hint)
+    }
     Spacer(Modifier.height(10.dp))
-    val spaces = Board.spaces(snap)
-    spaces.take(2).forEach { p -> Cover(vm, snap, p, today, Modifier.fillMaxWidth()); Spacer(Modifier.height(10.dp)) }
-    Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(22.dp)).background(Atlas.Surface).padding(horizontal = 14.dp, vertical = 4.dp)) {
-        val rest = spaces.drop(2)
-        rest.forEach { p -> SpaceLine(p.title, Board.cover(snap, p, today).line, null, Atlas.bands[(p.id.hashCode() and 0x7fffffff) % 4]) { vm.projectSpace(p.id) }; HorizontalDivider(color = Atlas.Hairline) }
-        SPECIAL.forEachIndexed { i, sp ->
-            SpaceLine(sp.kind.title, "${count(snap, sp.kind)} · ${sp.kind.blurb.lowercase()}", sp.icon, sp.tint) { vm.go(Route.Space(sp.kind.key)) }
-            if (i < SPECIAL.lastIndex) HorizontalDivider(color = Atlas.Hairline)
+    if (pinned.isEmpty()) Text("Spaces you’re busy in show here. Type “New space Garden” below to make one.", style = T.meta, color = Atlas.SecondaryText)
+    pinned.chunked(2).forEach { row ->
+        Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+            row.forEach { (p, _) -> SpaceTile(vm, snap, p, today, Modifier.weight(1f)) }
+            if (row.size == 1) Spacer(Modifier.weight(1f))
         }
+        Spacer(Modifier.height(10.dp))
     }
-}
-
-@Composable
-private fun SpaceLine(title: String, sub: String, icon: ImageVector?, tint: Color, onClick: () -> Unit) =
-    Row(Modifier.fillMaxWidth().heightIn(min = 56.dp).clickable(role = Role.Button, onClick = onClick).padding(vertical = 8.dp).testTag("space_$title"), verticalAlignment = Alignment.CenterVertically) {
-        Box(Modifier.size(32.dp).clip(RoundedCornerShape(10.dp)).background(tint), contentAlignment = Alignment.Center) { if (icon != null) Icon(icon, null, Modifier.size(18.dp), tint = Atlas.DeepPlum) }
-        Spacer(Modifier.width(12.dp))
-        Column(Modifier.weight(1f)) {
-            Text(title, style = T.tileTitle.copy(fontSize = 15.sp), color = Atlas.DeepPlum, maxLines = 1, overflow = TextOverflow.Ellipsis)
-            Text(sub, style = T.meta.copy(fontSize = 12.sp), color = Atlas.SecondaryText, maxLines = 1, overflow = TextOverflow.Ellipsis)
-        }
-    }
-
-@Composable
-private fun SpacesRow(vm: AtlasViewModel, snap: Snapshot, today: LocalDate) {
-    Eyebrow("Spaces")
-    Spacer(Modifier.height(10.dp))
-    val spaces = Board.spaces(snap)
-    Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(bottom = 6.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-        spaces.forEach { p -> Cover(vm, snap, p, today, Modifier.width(230.dp)) }
-        if (spaces.isEmpty()) Text("Type “Plan the garden” below and make it a space, or open one from Everything.", style = T.meta, color = Atlas.SecondaryText, modifier = Modifier.width(260.dp))
-    }
-    Spacer(Modifier.height(14.dp))
-    Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-        SPECIAL.forEach { sp ->
-            Row(Modifier.heightIn(min = 44.dp).clip(RoundedCornerShape(22.dp)).background(Atlas.Surface).clickable(role = Role.Button) { vm.go(Route.Space(sp.kind.key)) }
-                .padding(start = 6.dp, end = 14.dp).testTag("space_${sp.kind.title}"), verticalAlignment = Alignment.CenterVertically) {
-                Box(Modifier.size(32.dp).clip(CircleShape).background(sp.tint), contentAlignment = Alignment.Center) { Icon(sp.icon, null, Modifier.size(17.dp), tint = Atlas.DeepPlum) }
+    Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(20.dp)).background(Atlas.Surface).padding(horizontal = 14.dp)) {
+        active.forEach { p ->
+            val (line, late) = Board.spaceLine(snap, p, today)
+            Row(Modifier.fillMaxWidth().heightIn(min = 52.dp).clickable(role = Role.Button) { vm.projectSpace(p.id) }.padding(vertical = 8.dp).testTag("space_${p.title}"), verticalAlignment = Alignment.CenterVertically) {
+                SpaceMark(snap, p, 26.dp); Spacer(Modifier.width(10.dp))
+                Text(p.title, style = T.tileTitle.copy(fontSize = 14.sp), color = Atlas.DeepPlum, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
                 Spacer(Modifier.width(8.dp))
-                Text(sp.kind.title, style = T.metaStrong.copy(fontSize = 14.sp), color = Atlas.DeepPlum)
+                Text(line, style = T.meta.copy(fontSize = 12.sp), color = if (late) Atlas.CoralText else Atlas.SecondaryText, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.widthIn(max = 110.dp))
             }
+            HorizontalDivider(color = Atlas.Hairline)
+        }
+        Row(Modifier.fillMaxWidth().heightIn(min = 48.dp).clickable(role = Role.Button) { vm.go(Route.Space(Board.SPACES_KEY)) }.testTag("all_spaces"), verticalAlignment = Alignment.CenterVertically) {
+            Text("All ${Board.allSpaces(snap).size} spaces", style = T.metaStrong.copy(fontSize = 14.sp), color = Atlas.Primary, modifier = Modifier.weight(1f))
+            Icon(Icons.AutoMirrored.Outlined.KeyboardArrowRight, null, tint = Atlas.Primary)
         }
     }
 }
 
 @Composable
-private fun Cover(vm: AtlasViewModel, snap: Snapshot, p: KObject, today: LocalDate, modifier: Modifier) {
-    val c = remember(snap, p.id) { Board.cover(snap, p, today) }
-    val image = remember(snap, p.id) { Board.members(snap, p.id).firstOrNull { it.type == ObjType.IMAGE && it.vaultFile.isNotBlank() } }
-    val thumb = rememberThumb(image, 480)
-    Column(modifier.shadow(6.dp, RoundedCornerShape(26.dp), ambientColor = Atlas.DeepPlum.copy(alpha = 0.2f), spotColor = Atlas.DeepPlum.copy(alpha = 0.2f))
-        .clip(RoundedCornerShape(26.dp)).background(Atlas.Surface).clickable(role = Role.Button, onClickLabel = "Open space") { vm.projectSpace(p.id) }.testTag("cover")) {
-        Box(Modifier.fillMaxWidth().height(104.dp)) {
-            if (thumb != null) Image(thumb, null, Modifier.fillMaxSize(), contentScale = ContentScale.Crop) else Box(Modifier.fillMaxSize().clip(RoundedCornerShape(0.dp))) { CoverBand(p.id.hashCode()) }
-            Row(Modifier.align(Alignment.BottomStart).offset(x = 14.dp, y = 18.dp)) {
-                c.people.forEachIndexed { i, person -> Face(person, 38.dp, Modifier.offset(x = (-10 * i).dp), ring = Atlas.Surface) }
+private fun SpaceTile(vm: AtlasViewModel, snap: Snapshot, p: KObject, today: LocalDate, modifier: Modifier) {
+    val (line, late) = remember(snap, p.id) { Board.spaceLine(snap, p, today) }
+    Column(modifier.shadow(3.dp, RoundedCornerShape(20.dp)).clip(RoundedCornerShape(20.dp)).background(Atlas.Surface).clickable(role = Role.Button, onClickLabel = "Open ${p.title}") { vm.projectSpace(p.id) }
+        .padding(12.dp).testTag("cover"), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+        Row(verticalAlignment = Alignment.Top) {
+            SpaceMark(snap, p, 34.dp); Spacer(Modifier.weight(1f))
+            if (late) Box(Modifier.size(8.dp).clip(CircleShape).background(Atlas.Coral).semantics { contentDescription = "has a late task" })
+        }
+        Text(p.title, style = T.tileTitle.copy(fontSize = 15.sp, lineHeight = 19.sp), color = Atlas.DeepPlum, maxLines = 2, overflow = TextOverflow.Ellipsis)
+        Text(line, style = T.meta.copy(fontSize = 12.sp), color = if (late) Atlas.CoralText else Atlas.SecondaryText, maxLines = 1, overflow = TextOverflow.Ellipsis)
+    }
+}
+
+/** Cover screen: pinned spaces as chips, one thumb away. */
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+private fun SpaceChips(vm: AtlasViewModel, snap: Snapshot, today: LocalDate) {
+    val pinned = remember(snap) { Board.pinned(snap, today) }
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        Eyebrow("Spaces", Modifier.weight(1f))
+        Text("All ${Board.allSpaces(snap).size}", style = T.metaStrong.copy(fontSize = 13.sp), color = Atlas.Primary,
+            modifier = Modifier.clip(RoundedCornerShape(10.dp)).clickable(role = Role.Button) { vm.go(Route.Space(Board.SPACES_KEY)) }.padding(horizontal = 8.dp, vertical = 6.dp).testTag("all_spaces"))
+    }
+    Spacer(Modifier.height(8.dp))
+    FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        pinned.forEach { (p, _) ->
+            val late = remember(snap, p.id) { Board.spaceLine(snap, p, today).second }
+            Row(Modifier.heightIn(min = 44.dp).clip(RoundedCornerShape(14.dp)).background(Atlas.Surface).clickable(role = Role.Button) { vm.projectSpace(p.id) }
+                .padding(start = 6.dp, end = 12.dp).testTag("space_${p.title}"), verticalAlignment = Alignment.CenterVertically) {
+                SpaceMark(snap, p, 30.dp); Spacer(Modifier.width(8.dp))
+                Text(p.title, style = T.metaStrong.copy(fontSize = 14.sp), color = Atlas.DeepPlum, maxLines = 1)
+                if (late) { Spacer(Modifier.width(6.dp)); Box(Modifier.size(8.dp).clip(CircleShape).background(Atlas.Coral)) }
             }
         }
-        Column(Modifier.padding(start = 16.dp, end = 16.dp, top = if (c.people.isEmpty()) 14.dp else 26.dp, bottom = 16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            Text(p.title, style = T.cover, color = Atlas.DeepPlum, maxLines = 2, overflow = TextOverflow.Ellipsis)
-            c.progress?.let { pr ->
-                Box(Modifier.fillMaxWidth().height(6.dp).clip(RoundedCornerShape(3.dp)).background(Atlas.Hairline)) {
-                    Box(Modifier.fillMaxHeight().fillMaxWidth(pr).clip(RoundedCornerShape(3.dp)).background(Atlas.Primary))
-                }
-            }
-            Text(c.line, style = T.meta, color = if (c.late) Atlas.CoralText else Atlas.SecondaryText, maxLines = 1, overflow = TextOverflow.Ellipsis)
-        }
+        if (pinned.isEmpty()) Text("Type “New space Garden” below to make one.", style = T.meta, color = Atlas.SecondaryText)
     }
 }

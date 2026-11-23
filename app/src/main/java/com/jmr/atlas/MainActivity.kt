@@ -41,6 +41,8 @@ interface Platform {
     /** System speech recognizer, asked to prefer on-device recognition. Atlas itself never handles audio. */
     fun dictate(onText: (String) -> Unit)
     fun pickPhoto(onUri: (Uri) -> Unit)
+    /** Any file, for importing the AI model without the internet. */
+    fun pickAnyFile(onUri: (Uri) -> Unit)
     fun request(perms: List<String>, onResult: (Boolean) -> Unit)
     fun launch(i: Intent, failMsg: String = "No app on this phone can do that.")
     fun copy(label: String, text: String)
@@ -60,6 +62,8 @@ class MainActivity : ComponentActivity(), Platform {
 
     private val imagePicker = registerForActivityResult(ActivityResultContracts.PickVisualMedia()) { uri -> uri?.let { vm.attachOrCapture(it) } }
     private var photoCb: ((Uri) -> Unit)? = null
+    private var anyCb: ((Uri) -> Unit)? = null
+    private val anyPicker = registerForActivityResult(ActivityResultContracts.OpenDocument()) { uri -> uri?.let { anyCb?.invoke(it) }; anyCb = null }
     private val photoPicker = registerForActivityResult(ActivityResultContracts.PickVisualMedia()) { uri -> uri?.let { photoCb?.invoke(it) }; photoCb = null }
     private val filePicker = registerForActivityResult(ActivityResultContracts.OpenDocument()) { uri -> uri?.let { vm.attachOrCapture(it) } }
     private val scanner = registerForActivityResult(ActivityResultContracts.StartIntentSenderForResult()) { r ->
@@ -88,6 +92,7 @@ class MainActivity : ComponentActivity(), Platform {
     }
 
     override fun pickImage() = imagePicker.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly))
+    override fun pickAnyFile(onUri: (Uri) -> Unit) { anyCb = onUri; anyPicker.launch(arrayOf("*/*")) }
     override fun pickPhoto(onUri: (Uri) -> Unit) { photoCb = onUri; photoPicker.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)) }
     override fun pickFile() = filePicker.launch(arrayOf("application/pdf", "image/*", "text/plain"))
     override fun scan() {

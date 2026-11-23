@@ -8,7 +8,7 @@ fun newId(): String = UUID.randomUUID().toString()
 /** Every knowledge object type. One durable identity per object; relationships connect them. */
 enum class ObjType(val label: String, val plural: String) {
     PERSON("Person", "People"),
-    PROJECT("Project", "Projects"),
+    PROJECT("Space", "Spaces"),
     TASK("Task", "Tasks"),
     IDEA("Idea", "Ideas"),
     NOTE("Note", "Notes"),
@@ -41,6 +41,8 @@ enum class DetailKind(val label: String, val toContact: Boolean = false) {
     CUSTOM("Field"), FACT("Key fact"), REMEMBER("Thing to remember"), STEP("Step"), UPDATE("Update"), HIGHLIGHT("Highlight"),
     /** A band's name on a project board: objectId = project, label = band key, value = name; origin AI or USER. */
     BAND("Band name"),
+    /** A space's look (design 0.7): value = "<color>:<icon>" names from SpaceLook. */
+    LOOK("Look"),
 }
 
 /** The ten custom field types (design I06). SECRET is a flag, not a type: any text-like value can be masked. */

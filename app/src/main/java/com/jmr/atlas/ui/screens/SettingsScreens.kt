@@ -14,6 +14,7 @@ import androidx.compose.material.icons.automirrored.outlined.KeyboardArrowRight
 import androidx.compose.material.icons.outlined.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import kotlinx.coroutines.launch
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -187,6 +188,8 @@ fun AiSettingsScreen(vm: AtlasViewModel) {
     val st by vm.ai.status.collectAsState()
     val s = vm.settings
     var confirmDl by remember { mutableStateOf(false) }
+    val platform = com.jmr.atlas.LocalPlatform.current
+    val scope = rememberCoroutineScope()
     LaunchedEffect(st) { while (st is Ai.Status.Downloading || st is Ai.Status.Verifying) { vm.ai.poll(); delay(1500) } }
     key(v) {
     Column(Modifier.fillMaxSize().testTag("ai_screen")) {
@@ -214,6 +217,8 @@ fun AiSettingsScreen(vm: AtlasViewModel) {
                 when (val x = st) {
                     Ai.Status.NotDownloaded, is Ai.Status.Failed -> {
                         SRow(Icons.Outlined.Download, "Download Gemma 4 E2B", "2.6 GB, once. Free and open (Apache 2.0). Runs offline after that.", tag = "ai_download") { confirmDl = true }
+                        SRow(Icons.Outlined.FolderOpen, "Import the model file", "Already have gemma-4-E2B-it.litertlm? Pick it — no internet needed. It's checked before use.", tag = "ai_import") {
+                            platform.pickAnyFile { uri -> scope.launch { vm.ai.importModel(uri) } } }
                         if (x is Ai.Status.Failed) Text(x.why, color = Atlas.Error, style = MaterialTheme.typography.bodySmall, modifier = Modifier.padding(horizontal = 16.dp, vertical = 6.dp))
                     }
                     is Ai.Status.Downloading -> Column(Modifier.padding(16.dp)) {

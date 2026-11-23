@@ -203,4 +203,32 @@ object Sentence {
     fun searchTerms(question: String): String =
         Regex("[\\p{L}\\p{N}']+").findAll(question.lowercase()).map { it.value }.filter { it !in QWORDS && it.length > 2 && it !in STOP && it !in setOf("could", "would", "should", "about", "there", "anything", "something", "need", "left", "before", "after", "next", "still") }
             .joinToString(" ")
+
+    // ------------------------------------------------------------ intent (design 0.7)
+    /** What a line in the Atlas box is for. Decided by code in microseconds; the model is only called for ASK_WORLD and CHAT. */
+    enum class Intent { FIND, CAPTURE, ASK_MINE, ASK_WORLD, CHAT }
+
+    /** Words that make a question about the person's own things rather than about the world. */
+    private val MINE = setOf("my", "mine", "late", "overdue", "due", "owe", "owes", "owed", "waiting", "left", "todo", "tasks", "task", "today", "tonight",
+        "tomorrow", "week", "weekend", "schedule", "agenda", "plate", "slipped", "remind", "reminders", "upcoming", "deadline", "deadlines", "atlas")
+    private val CAPTURE_PREFIX = Regex("^(task|todo|to do|idea|note|remember|remind me|don'?t forget)\\b[:,]?", RegexOption.IGNORE_CASE)
+
+    /**
+     * Routes a line. [hits] = Atlas's search for the line (for a question, for its content words); [inChat] = the last
+     * thing Atlas said was a general answer, so a follow-up ("and at sunset?", "tell me more") continues that conversation.
+     */
+    fun intent(text: String, s: Snapshot, hits: List<com.jmr.atlas.data.Search.Hit>, inChat: Boolean, touchesMine: Boolean = false): Intent {
+        val raw = text.trim()
+        if (raw.isEmpty()) return Intent.FIND
+        val p = parse(raw, s)
+        val ws = com.jmr.atlas.data.Search.words(raw)
+        if (p.target != null || p.newSpace != null || p.kind == Kind.SPACE || CAPTURE_PREFIX.containsMatchIn(raw) || (!p.question && p.due != null)) return Intent.CAPTURE
+        if (p.question) {
+            val mine = touchesMine || ws.any { it in MINE } || p.people.isNotEmpty() || p.mentions.isNotEmpty() || hits.any { it.inTitle && it.score >= 7.0 }
+            return when { mine -> Intent.ASK_MINE; inChat -> Intent.CHAT; else -> Intent.ASK_WORLD }
+        }
+        if (inChat) return Intent.CHAT
+        if (p.kind == Kind.TASK || p.kind == Kind.IDEA) return Intent.CAPTURE
+        return if (ws.size <= 4 && (hits.isNotEmpty() || ws.size <= 2)) Intent.FIND else Intent.CAPTURE
+    }
 }

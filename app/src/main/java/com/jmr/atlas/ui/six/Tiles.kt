@@ -62,20 +62,35 @@ fun tileLabel(o: KObject, s: Snapshot, today: LocalDate): Pair<String, Color> {
                 o.done -> "DONE" to Atlas.DeepTeal
                 Board.isWaiting(o) -> ("WAITING" + (s.neighbours(o.id, false).map { it.first }.firstOrNull { it.type == ObjType.PERSON }?.let { " ON ${it.firstName.uppercase()}" } ?: "")) to Atlas.BlueText
                 d != null && d.isBefore(today) -> "LATE · ${Board.lateBy(d, today).removeSuffix(" late").uppercase()}" to Atlas.CoralText
-                d != null -> "DUE ${Board.whenShort(d, today).uppercase()}" to Atlas.DeepTeal
-                o.blocked -> "BLOCKED" to Atlas.CoralText
+                o.blocked -> "BLOCKED" + (d?.let { " · DUE " + Board.whenShort(it, today).uppercase() } ?: "") to Atlas.CoralText
+                d != null -> "DUE ${Board.whenShort(d, today).uppercase()}" to Atlas.DeepPlum
                 else -> "TASK" to Atlas.SecondaryText
             }
         }
-        ObjType.NOTE -> "${if (o.kind == "Voice note") "VOICE NOTE" else "NOTE"} · ${date(o.created)}" to Atlas.BlueText
-        ObjType.IDEA -> "IDEA" to Atlas.CoralText
+        ObjType.NOTE -> "${if (o.kind == "Voice note") "VOICE NOTE" else "NOTE"} · ${date(o.created)}" to Atlas.SecondaryText
+        ObjType.IDEA -> "IDEA" to Atlas.SecondaryText
         ObjType.DECISION -> "DECIDED" to Atlas.DeepPlum
-        ObjType.DOCUMENT -> listOfNotNull(o.kind.ifBlank { "Document" }.uppercase(), o.docDate?.let { Board.shortDate(it).uppercase() }).joinToString(" · ") to Atlas.BlueText
-        ObjType.LINK -> (o.site.ifBlank { o.url.substringAfter("://").substringBefore('/') }.removePrefix("www.").uppercase().take(28)) to Atlas.BlueText
-        ObjType.IMAGE -> "PHOTO" to Atlas.CoralText
-        ObjType.EVENT -> (o.eventDate?.let { Board.shortDate(it).uppercase() } ?: "MILESTONE") to Atlas.DeepTeal
+        ObjType.DOCUMENT -> listOfNotNull(o.kind.ifBlank { "Document" }.uppercase(), o.docDate?.let { Board.shortDate(it).uppercase() }).joinToString(" · ") to Atlas.SecondaryText
+        ObjType.LINK -> (o.site.ifBlank { o.url.substringAfter("://").substringBefore('/') }.removePrefix("www.").uppercase().take(28)) to Atlas.SecondaryText
+        ObjType.IMAGE -> "PHOTO" to Atlas.SecondaryText
+        ObjType.EVENT -> (o.eventDate?.let { Board.shortDate(it).uppercase() } ?: "MILESTONE") to Atlas.SecondaryText
         ObjType.PERSON -> o.role.uppercase().take(24) to Atlas.SecondaryText
         else -> o.type.label.uppercase() to Atlas.SecondaryText
+    }
+}
+
+/**
+ * Color is state (design 0.7, H): coral for late or blocked, amber for waiting, green for done, white for everything
+ * else. Returns background and ink, or null for plain white.
+ */
+fun stateTint(o: KObject, today: LocalDate): Pair<Color, Color>? {
+    if (o.type != ObjType.TASK) return null
+    val d = Board.effective(o)
+    return when {
+        o.done -> Atlas.DoneBg to Atlas.DoneInk
+        Board.isWaiting(o) -> Atlas.WaitBg to Atlas.WaitInk
+        o.blocked || (d != null && d.isBefore(today)) -> Atlas.LateBg to Atlas.LateInk
+        else -> null
     }
 }
 
@@ -87,8 +102,8 @@ fun humanLabel(o: KObject, s: Snapshot, today: LocalDate): Pair<String, Color> {
         o.done -> "Done" to Atlas.DeepTeal
         Board.isWaiting(o) -> ("Waiting" + (s.neighbours(o.id, false).map { it.first }.firstOrNull { it.type == ObjType.PERSON }?.let { " on ${it.firstName}" } ?: "") + (o.due?.let { " · " + Board.whenShort(it, today) } ?: "")) to Atlas.BlueText
         d != null && d.isBefore(today) -> "Late · ${Board.lateBy(d, today).removeSuffix(" late")}" to Atlas.CoralText
-        d != null -> "Due ${Board.whenShort(d, today)}" to Atlas.DeepTeal
-        o.blocked -> "Blocked" to Atlas.CoralText
+        o.blocked -> "Blocked" + (d?.let { " · due " + Board.whenShort(it, today) } ?: "") to Atlas.CoralText
+        d != null -> "Due ${Board.whenShort(d, today)}" to Atlas.SecondaryText
         else -> "No date" to Atlas.SecondaryText
     }
 }
@@ -115,7 +130,7 @@ fun Tile(vm: AtlasViewModel, o: KObject, today: LocalDate, state: TileState, mod
     LaunchedEffect(state == TileState.Selected) { if (state == TileState.Selected && size != IntSize.Zero) bring.bringIntoView(Rect(0f, -40f, size.width.toFloat(), size.height + margin)) }
     val alpha by animateFloatAsState(if (state == TileState.Faded) 0.18f else 1f, label = "fade")
     val scale by animateFloatAsState(if (state == TileState.Selected) 1.03f else 1f, label = "lift")
-    val bg = when (o.type) { ObjType.IDEA -> Atlas.Peach; else -> Atlas.Surface }
+    val bg = stateTint(o, today)?.first ?: Atlas.Surface
     val shape = RoundedCornerShape(20.dp)
     val ring = when (state) {
         TileState.Selected -> Modifier.border(3.dp, Atlas.Primary, shape)
@@ -169,7 +184,8 @@ private fun AnchorContent(p: KObject, s: Snapshot, today: LocalDate, compact: Bo
 
 @Composable
 private fun Content(o: KObject, s: Snapshot, today: LocalDate) {
-    val (label, lc) = tileLabel(o, s, today)
+    val (label, lc0) = tileLabel(o, s, today)
+    val lc = stateTint(o, today)?.second ?: lc0
     Column(Modifier.fillMaxSize().padding(horizontal = 14.dp, vertical = 12.dp), verticalArrangement = Arrangement.SpaceBetween) {
         if (o.type == ObjType.PERSON) {
             Row(verticalAlignment = Alignment.CenterVertically) {
@@ -184,12 +200,12 @@ private fun Content(o: KObject, s: Snapshot, today: LocalDate) {
             return@Column
         }
         Row(verticalAlignment = Alignment.CenterVertically) {
-            if (o.kind == "Voice note") { Icon(Icons.Outlined.Mic, null, Modifier.size(13.dp), tint = lc); Spacer(Modifier.width(4.dp)) }
+            Icon(if (o.kind == "Voice note") Icons.Outlined.Mic else com.jmr.atlas.ui.theme.icon(o.type), null, Modifier.size(14.dp), tint = lc); Spacer(Modifier.width(5.dp))
             Text(label, style = T.tileLabel, color = lc, maxLines = 1, overflow = TextOverflow.Ellipsis)
         }
         val title = if (o.type == ObjType.NOTE && o.kind == "Voice note") "“${o.body.ifBlank { o.title }}”" else o.title
         Text(title, style = if (o.type == ObjType.IDEA || o.type == ObjType.NOTE && o.kind == "Voice note") T.tileQuote.copy(fontSize = 16.sp, lineHeight = 20.sp) else T.tileTitle,
-            color = if (o.done) Atlas.Hint else Atlas.DeepPlum, maxLines = if (LocalWide.current) 2 else 3, overflow = TextOverflow.Ellipsis)
+            color = if (o.done) Atlas.DoneInk else Atlas.DeepPlum, maxLines = if (LocalWide.current) 2 else 3, overflow = TextOverflow.Ellipsis)
         Footer(o, s)
     }
 }

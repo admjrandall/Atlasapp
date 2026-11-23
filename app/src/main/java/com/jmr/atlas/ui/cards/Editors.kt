@@ -38,7 +38,10 @@ import java.time.Instant
 import java.time.LocalDate
 import java.time.ZoneOffset
 
-private val CREATABLE = listOf(ObjType.NOTE, ObjType.TASK, ObjType.PROJECT, ObjType.PERSON, ObjType.IDEA, ObjType.LINK, ObjType.EVENT, ObjType.COLLECTION, ObjType.DECISION)
+// 0.7: the core types first; collections are folded into spaces, so they aren't offered
+private val CORE_TYPES = listOf(ObjType.TASK, ObjType.NOTE, ObjType.IDEA, ObjType.PERSON, ObjType.PROJECT)
+private val MORE_TYPES = listOf(ObjType.LINK, ObjType.EVENT, ObjType.DECISION)
+private val CREATABLE = CORE_TYPES + MORE_TYPES
 val DOC_KINDS = listOf("Estimate", "Invoice", "Receipt", "Contract", "Policy", "Statement", "Permit", "Warranty", "Manual", "Letter", "Report", "Other")
 val LINK_KINDS = listOf("Reference", "Article", "Recipe", "Product", "Video", "Tool", "Inspiration")
 
@@ -107,7 +110,12 @@ fun EditorScreen(vm: AtlasViewModel, snap: Snapshot, existing: KObject?, newType
                     Pill6("Save", Atlas.DeepPlum, androidx.compose.ui.graphics.Color.White, Modifier.testTag("save")) { save() }
                 }
                 Column(Modifier.weight(1f).verticalScroll(rememberScrollState()).padding(horizontal = 16.dp).padding(bottom = 48.dp).imePadding().widthIn(max = 720.dp)) {
-                    if (existing == null && newType == null) ChoiceRow(CREATABLE.map { it.label }, type.label) { l -> type = CREATABLE.first { it.label == l } }
+                    if (existing == null && newType == null) {
+                        var more by remember { mutableStateOf(type in MORE_TYPES) }
+                        val shown = if (more) CREATABLE else CORE_TYPES
+                        ChoiceRow(shown.map { it.label } + if (more) emptyList() else listOf("More…"), type.label) { l ->
+                            if (l == "More…") more = true else type = CREATABLE.first { it.label == l } }
+                    }
                     // ---- hero: what it is, its name, its words — edited in place, on the same tint as its page
                     Column(Modifier.fillMaxWidth().padding(top = 6.dp).clip(RoundedCornerShape(28.dp)).background(tint).padding(20.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                         Text(type.label.uppercase(), style = T.eyebrow, color = ink)
@@ -202,8 +210,7 @@ fun EditorScreen(vm: AtlasViewModel, snap: Snapshot, existing: KObject?, newType
 
 private fun heroColors(t: ObjType): Pair<androidx.compose.ui.graphics.Color, androidx.compose.ui.graphics.Color> = when (t) {
     ObjType.PERSON, ObjType.PROJECT, ObjType.COLLECTION -> Atlas.PrimaryContainer to Atlas.Primary
-    ObjType.IMAGE -> Atlas.Peach to Atlas.CoralText
-    else -> com.jmr.atlas.ui.theme.accent(t).let { it.container to it.content }
+    else -> Atlas.Chip to Atlas.DeepPlum
 }
 
 @Composable

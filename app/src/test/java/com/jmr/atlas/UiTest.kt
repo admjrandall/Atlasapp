@@ -89,14 +89,14 @@ class CoverUiTest {
         val t = rule.repo().snap.live.first { it.title == "Order grout" }
         assertEquals(LocalDate.now().with(TemporalAdjusters.next(DayOfWeek.FRIDAY)), t.due)
         assertTrue(rule.repo().snap.neighbours(t.id).any { it.first.title == "Home Renovation" })
-        rule.onNodeWithTag("toast").assertExists()
+        rule.onNodeWithTag("did", useUnmergedTree = true).assertExists()   // 0.7: the box stays open and the thread says what Atlas did
         rule.shot("c03_saved")
     }
 
     @Test @Config(sdk = [36], qualifiers = "w369dp-h905dp-xxhdpi")
     fun boardTapOpen() {
         rule.example()
-        rule.onAllNodesWithTag("cover").onFirst().performScrollTo(); rule.vm { it.projectSpace(rule.idOf("Home Renovation")) }
+        rule.vm { it.projectSpace(rule.idOf("Home Renovation")) }
         rule.onNodeWithTag("space").assertIsDisplayed()
         assertTrue(rule.onAllNodesWithTag("band", useUnmergedTree = true).fetchSemanticsNodes().size >= 4)
         rule.shot("c04_board")
@@ -163,7 +163,7 @@ class FoldUiTest {
     @Test @Config(sdk = [36], qualifiers = "w707dp-h823dp-port-xhdpi")
     fun specialSpacesAndPages() {
         rule.example()
-        rule.onNodeWithTag("space_People").assertExists()
+        rule.onNodeWithTag("core_People", useUnmergedTree = true).assertExists()
         rule.vm { it.go(com.jmr.atlas.ui.Route.Space("people")) }; rule.shot("f08_people")
         rule.vm { it.go(com.jmr.atlas.ui.Route.Space("tasks")) }; rule.shot("f09_tasks")
         rule.vmOpen(rule.idOf("Compare contractor quotes")); rule.shot("f10_item_task")
@@ -233,9 +233,8 @@ class InputUiTest {
     @Test @Config(sdk = [36], qualifiers = "w707dp-h823dp-port-xhdpi")
     fun toastGoesAway() {
         rule.example()
-        rule.type("Call the dentist tomorrow")
         rule.mainClock.autoAdvance = false
-        rule.onNodeWithContentDescription("Save").performClick()
+        rule.activityRule.scenario.onActivity { a -> androidx.lifecycle.ViewModelProvider(a)[AtlasViewModel::class.java].say("Marked done") }
         rule.mainClock.advanceTimeBy(1000)
         rule.onNodeWithTag("toast", useUnmergedTree = true).assertExists()
         rule.shot("n01_toast")
@@ -378,7 +377,8 @@ class InputUiTest {
         rule.example()
         rule.type("Call the pharmacy tomorrow\n")
         assertTrue(rule.repo().snap.live.any { it.type == ObjType.TASK && it.title == "Call the pharmacy" })
-        assertTrue(gone("catch_sheet"))
+        rule.onNodeWithTag("did", useUnmergedTree = true).assertExists()
+        rule.onNodeWithTag("catch_input").assert(hasText(""))
     }
 
     @Test @Config(sdk = [36], qualifiers = "w707dp-h823dp-port-xhdpi")

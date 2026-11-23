@@ -1,6 +1,20 @@
-# Atlas 0.6 — build ledger (Nov 23 2026)
+# Atlas — build ledger (Nov 23 2026)
 
 Honest status. "Verified" = automated test or inspected screenshot (Robolectric). Nothing has run on a physical Fold 6 yet; items marked **device-only** can only be proven there.
+
+## 0.7.0 — the Atlas box, search, Now, spaces, color = state
+
+| Asked | Done | Test |
+|---|---|---|
+| Typing "Priya" wants to add something | Every line is routed first: **find** (a name or a few words), **capture** (a sentence with a verb, date or "add to"), **ask about my things**, **ask anything**, or **chat** (follow-up to an answer). Find shows kind chips, a best-match card (person: Open / Call / Text / Email), grouped results with why they matched, and "Save as a note" last | `routesWhatYouType`, `aNameFindsThings` |
+| A full AI experience like Muse | The box keeps a thread: what you said, what Atlas did (with Undo), answers about your things (instant rule answer, refined by the model), and general answers. A general answer offers once: Save to <matching space> / + New space / Keep as a note. "add to X" right after an answer files it | `generalQuestionWithoutAModel`, `answerFilesIntoASpace`, `threadSaysWhatItDidAndUndoes` |
+| Too many spaces on Now | Now: core strip (People, Tasks · N slipped, Files, Ideas & notes, Spaces) that scrolls sideways; up to 4 pinned spaces (yours first, then the busiest, marked Auto), "All N spaces". 3+ late tasks fold into one "slipped" row | `nowHasTheCoreStripAndPinnedSpaces`, `nowOnTheCover` |
+| Collections into spaces | All spaces screen: filter, Pinned, This week, spaces that hold spaces (House → …), Other, Quiet folded. Pin toggle; tap a mark to pick color (6) and icon (12). Collection is no longer offered in Create | `allSpacesPinsFiltersAndRecolors` |
+| Long lists of everything | People / Files / Ideas & notes: filter + List / By space. People: Recent faces, A–Z with letter rail; others by This week / This month / Earlier | `peopleReadAsAList` |
+| Card colors | Color is state: coral late or blocked, amber waiting, green done, otherwise white. Type is an icon on a quiet chip; spaces wear their own color + icon; people keep their face color. Bands neutral, Late band faintly coral | `colorIsState` |
+| On-phone AI | One `Brain` interface. Gemma (LiteRT-LM, GPU) is one implementation; the model is downloaded once or imported from a file (Settings → AI → Import the model file), never bundled in the APK. No cloud fallback | — (model can't run under Robolectric; **device-only**) |
+
+Changed tests: the box no longer closes with a toast after saving — `catchATaskFromASentence`, `returnKeySends` now check the thread's "did" card; `toastGoesAway` uses another toast.
 
 ## 0.6.3 — input box closing by itself; sending from the sentence
 

@@ -206,6 +206,62 @@ object Board {
         .filter { it.projectStatus != ProjectStatus.ARCHIVED && it.projectStatus != ProjectStatus.COMPLETED }
         .sortedWith(compareBy({ if (it.pinned) 0 else 1 }, { it.projectStatus?.ordinal ?: 9 }, { -it.updated }))
 
+    // ------------------------------------------------------------ spaces at scale (design 0.7)
+    /** Route key of the All spaces screen. */
+    const val SPACES_KEY = "spaces"
+    /** Spaces and the old Collections (which are just spaces that hold other spaces now). */
+    fun allSpaces(s: Snapshot): List<KObject> = s.live.filter { (it.type == ObjType.PROJECT && it.projectStatus != ProjectStatus.ARCHIVED) || it.type == ObjType.COLLECTION }
+
+    /** Spaces held by [id]: a space linked to another space or collection sits inside it. */
+    fun inside(s: Snapshot, id: String): List<KObject> {
+        val me = s.objects[id] ?: return emptyList()
+        return s.neighbours(id, false).map { it.first }.filter { (it.type == ObjType.PROJECT || it.type == ObjType.COLLECTION) && it.id != id && parentOf(s, it)?.id == me.id }
+    }
+    /** The space a space sits in, if any: a collection it's linked to, or a space it's "part of". */
+    fun parentOf(s: Snapshot, o: KObject): KObject? = s.neighbours(o.id, false).firstOrNull { (other, rel) ->
+        other.type == ObjType.COLLECTION || (other.type == ObjType.PROJECT && rel.type == RelType.PART_OF && rel.sourceId == o.id)
+    }?.first?.takeIf { it.id != o.id }
+
+    /** How much needs attention in a space this week: late counts most, then due soon, then recent activity. */
+    fun busyness(s: Snapshot, p: KObject, today: LocalDate): Double {
+        val m = members(s, p.id)
+        val late = m.count { it.type == ObjType.TASK && !isWaiting(it) && effective(it)?.isBefore(today) == true }
+        val soon = m.count { it.type == ObjType.TASK && effective(it)?.let { d -> !d.isBefore(today) && ChronoUnit.DAYS.between(today, d) <= 7 } == true }
+        val touched = (m.maxOfOrNull { it.updated } ?: p.updated).coerceAtLeast(p.updated)
+        val days = (System.currentTimeMillis() - touched).coerceAtLeast(0) / 86_400_000.0
+        return late * 3.0 + soon * 2.0 + 2.0 / (1.0 + days / 7.0)
+    }
+
+    /** Up to [max] spaces for Now: the ones you pinned, then the busiest. Second = true when Atlas picked it. */
+    fun pinned(s: Snapshot, today: LocalDate, max: Int = 4): List<Pair<KObject, Boolean>> {
+        val all = allSpaces(s).filter { it.type == ObjType.PROJECT && it.projectStatus != ProjectStatus.COMPLETED }
+        val mine = all.filter { it.pinned }.sortedByDescending { it.updated }
+        val auto = all.filter { !it.pinned }.map { it to busyness(s, it, today) }.filter { it.second > 0.6 }.sortedByDescending { it.second }.map { it.first }
+        return (mine.map { it to false } + auto.map { it to true }).take(max)
+    }
+
+    /** Spaces with something due this week that aren't already pinned. */
+    fun active(s: Snapshot, today: LocalDate, exclude: Set<String>): List<KObject> = allSpaces(s).filter { it.type == ObjType.PROJECT && it.id !in exclude }
+        .filter { p -> members(s, p.id).any { it.type == ObjType.TASK && !it.done && effective(it)?.let { d -> ChronoUnit.DAYS.between(today, d) <= 7 } == true } }
+        .sortedByDescending { busyness(s, it, today) }
+
+    /** Nothing touched for a month and nothing due: folded away in All spaces. */
+    fun quiet(s: Snapshot, p: KObject, today: LocalDate): Boolean {
+        val m = members(s, p.id)
+        val touched = (m.maxOfOrNull { it.updated } ?: 0L).coerceAtLeast(p.updated)
+        val due = m.any { it.type == ObjType.TASK && !it.done && effective(it) != null }
+        return !p.pinned && !due && System.currentTimeMillis() - touched > 30L * 86_400_000
+    }
+
+    /** A space's line on Now: its next milestone or what's due, and lateness. */
+    fun spaceLine(s: Snapshot, p: KObject, today: LocalDate): Pair<String, Boolean> {
+        if (p.type == ObjType.COLLECTION) return inside(s, p.id).joinToString(" · ") { it.title }.ifBlank { "Holds other spaces" } to false
+        val c = cover(s, p, today)
+        val nextTask = members(s, p.id).filter { it.type == ObjType.TASK && !it.done && effective(it) != null }.minByOrNull { effective(it)!! }
+        val line = c.line.ifBlank { nextTask?.let { "${shortTitle(it.title)} ${whenShort(effective(it)!!, today)}" } ?: "Nothing due" }
+        return line to c.late
+    }
+
     // ------------------------------------------------------------ words
     private val MONTH = java.time.format.DateTimeFormatter.ofPattern("d MMM")
     fun shortDate(d: LocalDate) = d.format(MONTH)

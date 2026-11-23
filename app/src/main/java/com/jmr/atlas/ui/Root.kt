@@ -93,7 +93,7 @@ private fun RouteContent(vm: AtlasViewModel, snap: Snapshot, r: Route) {
     val narrowPage: @Composable (@Composable () -> Unit) -> Unit = { content -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.TopCenter) { Box(Modifier.widthIn(max = 820.dp)) { content() } } }
     when (r) {
         Route.Home -> HomeScreen(vm, snap)
-        is Route.Space -> SpaceScreen(vm, snap, r.space)
+        is Route.Space -> if (r.space == Board.SPACES_KEY) com.jmr.atlas.ui.six.AllSpacesScreen(vm, snap) else SpaceScreen(vm, snap, r.space)
         is Route.Item -> ItemScreen(vm, snap, r.id)
         Route.Review -> narrowPage { ReviewScreen(vm, snap) }
         Route.Settings -> narrowPage { SettingsScreen(vm, snap) }

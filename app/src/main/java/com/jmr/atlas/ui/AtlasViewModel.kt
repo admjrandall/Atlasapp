@@ -8,10 +8,12 @@ import androidx.lifecycle.viewModelScope
 import com.jmr.atlas.AtlasApp
 import com.jmr.atlas.capture.Readers
 import com.jmr.atlas.capture.Sentence
+import com.jmr.atlas.data.Search
 import com.jmr.atlas.data.AiMode
 import com.jmr.atlas.data.Board
 import com.jmr.atlas.data.Briefing
 import com.jmr.atlas.data.ExampleWorkspace
+import com.jmr.atlas.integrations.Brain
 import com.jmr.atlas.integrations.Ai
 import com.jmr.atlas.integrations.Web
 import com.jmr.atlas.model.*
@@ -23,6 +25,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
 import androidx.compose.foundation.text.input.TextFieldState
+import androidx.compose.foundation.text.input.selectAll
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.foundation.text.input.clearText
 import androidx.compose.foundation.text.input.setTextAndPlaceCursorAtEnd
@@ -72,12 +75,18 @@ sealed interface Overlay {
     data class RenameBand(val projectId: String, val key: String, val current: String) : Overlay
 }
 
-/** What the input box shows above itself after you ask something. */
-sealed interface AskState {
-    data object Idle : AskState
-    data object Thinking : AskState
-    /** [byAi]: written by the on-device model from [ids]; otherwise put together by Atlas's own rules. */
-    data class Answer(val question: String, val text: String, val ids: List<String>, val byAi: Boolean, val spaceId: String?, val refining: Boolean = false, val note: String? = null) : AskState
+/** One line in the Atlas conversation (design 0.7). The thread is short-lived: Clear empties it; what Atlas did lives in your spaces. */
+sealed interface Turn {
+    val id: String
+    data class You(override val id: String = newId(), val text: String, val files: Int = 0) : Turn
+    /** Atlas changed something in Atlas. Undo stays on the card while it's in the thread. */
+    data class Did(override val id: String = newId(), val text: String, val ids: List<String>, val undo: (() -> Unit)?, val undone: Boolean = false) : Turn
+    /** An answer about your own things: Atlas's own sentence at once, maybe refined by the model. */
+    data class Mine(override val id: String = newId(), val question: String, val text: String, val ids: List<String>, val byAi: Boolean, val spaceId: String?,
+        val refining: Boolean = false, val note: String? = null) : Turn
+    /** A general answer or conversational reply. [offers] = spaces it might belong to. */
+    data class World(override val id: String = newId(), val question: String, val text: String = "", val thinking: Boolean = true, val noModel: Boolean = false,
+        val offers: List<String> = emptyList(), val saved: Boolean = false) : Turn
 }
 
 class AtlasViewModel(app: Application, private val saved: SavedStateHandle) : AndroidViewModel(app) {
@@ -85,6 +94,9 @@ class AtlasViewModel(app: Application, private val saved: SavedStateHandle) : An
     val repo = atlas.repo
     val sync = atlas.sync
     val ai = atlas.ai
+    /** The model behind Atlas (Gemma on this phone today; Apple's or your server's later). */
+    val brain: Brain get() = ai
+    fun brainReady() = settings.aiMode == AiMode.ON_DEVICE && brain.ready()
     val snap = repo.state
     val settings get() = repo.settings
 
@@ -96,6 +108,7 @@ class AtlasViewModel(app: Application, private val saved: SavedStateHandle) : An
 
     val overlay = MutableStateFlow<Overlay?>(null)
     fun show(o: Overlay?) { overlay.value = o }
+
 
     /** Results of actions (never decorative). An optional Undo runs the given block. */
     data class Msg(val text: String, val undo: (() -> Unit)? = null)
@@ -152,13 +165,13 @@ class AtlasViewModel(app: Application, private val saved: SavedStateHandle) : An
     private val named = HashSet<String>()
     /** With on-device AI on, bands that still have their default name get a topic name. Runs once per band set; you can rename any. */
     fun nameBands(projectId: String) {
-        if (settings.aiMode != AiMode.ON_DEVICE || ai.status.value != Ai.Status.Ready) return
+        if (!brainReady()) return
         val s = repo.snap; val p = s.objects[projectId] ?: return
         val todo = Board.bands(s, projectId).filter { it.nameOrigin == Origin.AUTO && it.items.size >= 2 && it.key != Board.PEOPLE_BAND }
         val sig = projectId + todo.joinToString { it.key + it.items.size }
         if (todo.isEmpty() || !named.add(sig)) return
         viewModelScope.launch {
-            runCatching { ai.nameBands(p.title, todo.map { b -> b.items.map { it.title } }) }.onSuccess { names ->
+            runCatching { brain.nameBands(p.title, todo.map { b -> b.items.map { it.title } }) }.onSuccess { names ->
                 todo.zip(names).forEach { (b, n) ->
                     if (n != null && repo.snap.detailsOf(projectId, DetailKind.BAND).none { it.label == b.key }) repo.putDetail(Detail(objectId = projectId, kind = DetailKind.BAND, label = b.key, value = n, origin = Origin.AI))
                 }
@@ -189,19 +202,22 @@ class AtlasViewModel(app: Application, private val saved: SavedStateHandle) : An
     val attachments = MutableStateFlow<List<Pending>>(emptyList())
     /** Spaces you asked for in "Link to…" that don't exist yet; made when you send. */
     val newLinks = MutableStateFlow<List<String>>(emptyList())
-    val ask = MutableStateFlow<AskState>(AskState.Idle)
+    val thread = MutableStateFlow<List<Turn>>(emptyList())
+    /** What Atlas is doing right now, shown under its name ("Thinking on this phone…"). */
+    val working = MutableStateFlow<String?>(null)
     private var askJob: Job? = null
     private var lastText = ""
 
     /** Opens the input box. Without [prefill] whatever you'd typed before is still there (a draft survives closing). */
     fun openCatch(prefill: String? = null) {
         if (prefill != null) catchField.setTextAndPlaceCursorAtEnd(prefill)
+        else if (catchField.text.isNotEmpty()) catchField.edit { selectAll() }   // an old draft is selected, so typing replaces it
         catchOpenedAt = android.os.SystemClock.uptimeMillis()
         context.value = (route as? Route.Item)?.id ?: boardSel.value?.takeIf { route is Route.Space }
-        resetParts(); attachOpen.value = false; ask.value = AskState.Idle; catchOpen.value = true
+        resetParts(); attachOpen.value = false; catchOpen.value = true
     }
     /** Closes the box; the draft (text and attachments) stays for next time. Sending is what clears it. */
-    fun closeCatch() { catchOpen.value = false; askJob?.cancel(); ask.value = AskState.Idle; attachOpen.value = false }
+    fun closeCatch() { catchOpen.value = false; attachOpen.value = false }
     /** When the box last opened: taps on the backdrop right after (keyboard still sliding in) are ignored. */
     var catchOpenedAt = 0L; private set
     private fun resetParts() { kindOverride.value = null; dropped.value = emptySet(); dueOff.value = false; extraLinks.value = emptyList(); newLinks.value = emptyList(); lastText = catchText }
@@ -230,7 +246,6 @@ class AtlasViewModel(app: Application, private val saved: SavedStateHandle) : An
     fun textChanged(t: String) {
         if (t == lastText) return
         lastText = t
-        if (ask.value !is AskState.Idle) { askJob?.cancel(); ask.value = AskState.Idle }
         kindOverride.value = null; dueOff.value = false
     }
     fun setCatch(t: String) { catchField.setTextAndPlaceCursorAtEnd(t); textChanged(t) }
@@ -251,13 +266,96 @@ class AtlasViewModel(app: Application, private val saved: SavedStateHandle) : An
     fun kindOf(p: Sentence.Parsed): Sentence.Kind = kindOverride.value
         ?: if (contextObj?.type == ObjType.TASK && p.due == null && p.kind != Sentence.Kind.IDEA && p.kind != Sentence.Kind.SPACE && p.target == null && p.newSpace == null && context.value !in dropped.value) Sentence.Kind.STEP else p.kind
 
+    // ---------------------------------------------------------------- the instant engine (design 0.7)
+    private var ixFor: Snapshot? = null
+    private var ix: Search.Index? = null
+    /** Atlas's own search index, rebuilt only when something changes. */
+    fun searchIndex(): Search.Index { val s = repo.snap; if (s !== ixFor || ix == null) { ix = Search.index(s); ixFor = s }; return ix!! }
+    fun find(text: String): List<Search.Hit> = if (text.isBlank()) emptyList() else Search.find(searchIndex(), text)
+
+    /** True when the last thing Atlas said was a general answer, so a follow-up continues that conversation. */
+    val inChat: Boolean get() = (thread.value.lastOrNull { it !is Turn.You } as? Turn.World)?.let { !it.noModel } == true
+
+    fun intentOf(text: String): Sentence.Intent {
+        val q = Sentence.isQuestion(text)
+        val terms = if (q) Sentence.searchTerms(text).ifBlank { text } else text
+        // a question that names one of your things ("what could delay demolition?") is about your world, even if
+        // not every word matches; inside a space, questions are about that space
+        val touches = q && (currentProject != null || Search.words(terms).filter { it.length >= 4 }.any { w -> find(w).any { it.inTitle && it.score >= 5.0 && it.o.type != ObjType.NOTE } })
+        return Sentence.intent(text, repo.snap, find(terms), inChat, touches)
+    }
+
     fun send() {
         val text = catchText.trim()
         if (attachments.value.isNotEmpty()) { saveFiles(if (text.isEmpty()) null else parsed(text)); return }
         if (text.isEmpty()) return
         val p = parsed(text)
-        if (p.question) { askNow(text); return }
-        save(p)
+        when (intentOf(text)) {
+            Sentence.Intent.FIND -> find(text).firstOrNull()?.let { openHit(it.o.id) } ?: save(p.copy(kind = Sentence.Kind.NOTE))
+            Sentence.Intent.CAPTURE -> if (inChat && p.title.isBlank() && (p.target != null || p.newSpace != null)) saveWorld(null, p.target, p.newSpace) else save(p)
+            Sentence.Intent.ASK_MINE -> askMine(text)
+            Sentence.Intent.ASK_WORLD, Sentence.Intent.CHAT -> askWorld(text)
+        }
+    }
+
+    /** Save a line as exactly this kind (used when Atlas read it as a search but you meant to keep it). */
+    fun saveLine(text: String, kind: Sentence.Kind) { val p = parsed(text.trim()); kindOverride.value = kind; save(p.copy(title = p.title.ifBlank { text.trim() })) }
+
+    /** Open a search result from the box. */
+    fun openHit(id: String) { closeCatch(); reveal(id) }
+
+    fun clearThread() { askJob?.cancel(); working.value = null; thread.value = emptyList() }
+    private fun push(vararg t: Turn) { thread.value = thread.value + t }
+    private fun replace(id: String, f: (Turn) -> Turn) { thread.value = thread.value.map { if (it.id == id) f(it) else it } }
+    private fun done(text: String, ids: List<String>, undo: (() -> Unit)?, said: String) {
+        push(Turn.You(text = said, files = attachments.value.size), Turn.Did(text = text, ids = ids, undo = undo))
+        catchField.clearText(); attachments.value = emptyList(); lastText = ""; resetParts()
+    }
+    fun undoTurn(id: String) {
+        val t = thread.value.firstOrNull { it.id == id } as? Turn.Did ?: return
+        if (t.undone) return
+        runCatching { t.undo?.invoke() }
+        replace(id) { (it as Turn.Did).copy(undone = true) }
+    }
+
+    /** A general question or a reply in a conversation: answered by the model, with "save to…" offers underneath. */
+    private fun askWorld(question: String) {
+        catchField.clearText(); lastText = ""
+        val turn = Turn.World(question = question)
+        push(Turn.You(text = question), turn)
+        if (!brainReady()) {
+            replace(turn.id) { (it as Turn.World).copy(thinking = false, noModel = true, text = "I answer questions like this with the AI model on your phone, and it isn’t set up yet. It’s a one-time 2.6 GB download (or import the file), then it works offline.") }
+            return
+        }
+        val history = thread.value.dropLast(2).flatMap { t -> when (t) { is Turn.You -> listOf(true to t.text); is Turn.World -> if (t.text.isNotBlank() && !t.noModel) listOf(false to t.text) else emptyList(); else -> emptyList() } }
+        askJob?.cancel()
+        askJob = viewModelScope.launch {
+            working.value = "Thinking on this phone…"
+            val text = withTimeoutOrNull(90_000) { runCatching { brain.chat(history, question) }.getOrNull() }?.takeIf { it.isNotBlank() }
+            working.value = null
+            val offers = if (text == null) emptyList() else spaceOffers(question + " " + text)
+            replace(turn.id) { (it as Turn.World).copy(thinking = false, text = text ?: "The model didn’t answer in time. Try again, or ask something shorter.", offers = offers) }
+        }
+    }
+
+    /** Spaces a general answer might belong to: ones whose name shares a word with the question or answer. */
+    private fun spaceOffers(text: String): List<String> {
+        val ws = Search.words(text).filter { it.length >= 4 }.toSet()
+        return repo.snap.ofType(ObjType.PROJECT).filter { it.projectStatus != ProjectStatus.ARCHIVED && Search.words(it.title).any { w -> w.length >= 4 && w in ws } }
+            .sortedByDescending { it.updated }.take(2).map { it.id }
+    }
+
+    /** Save a general answer as a note: to a space, a new space, or on its own (Today). Uses the latest answer when [turnId] is null. */
+    fun saveWorld(turnId: String?, space: KObject?, newSpace: String?) {
+        val t = (turnId?.let { id -> thread.value.firstOrNull { it.id == id } } ?: thread.value.lastOrNull { it is Turn.World && it.text.isNotBlank() && !it.noModel }) as? Turn.World ?: return
+        val made = newSpace?.let { makeSpace(Sentence.nameCase(it)) }
+        val target = made ?: space
+        val title = t.question.trim().replaceFirstChar { it.uppercase() }.take(80)
+        val id = repo.create(KObject(type = ObjType.NOTE, title = title, body = t.text), listOfNotNull(target?.let { it.id to RelType.BELONGS_TO }))
+        replace(t.id) { (it as Turn.World).copy(saved = true) }
+        val where = target?.let { if (made != null) "Saved to ${it.title} (new space)" else "Saved to ${it.title}" } ?: "Saved as a note"
+        push(Turn.Did(text = where, ids = listOf(id), undo = { repo.trash(id); made?.let { m -> repo.trash(m.id) } }))
+        catchField.clearText(); lastText = ""
     }
 
     /** New spaces this line asks for (typed or picked), unless you crossed them out. */
@@ -295,8 +393,7 @@ class AtlasViewModel(app: Application, private val saved: SavedStateHandle) : An
         val what = if (docs.size == 1) (if (files[0].read.mime.startsWith("image/")) "Photo" else "File") else "${docs.size} ${if (files.all { it.read.mime.startsWith("image/") }) "photos" else "files"}"
         val where = links.firstOrNull { it.type == ObjType.PROJECT }?.let { sp -> if (made.any { it.id == sp.id }) "added to ${sp.title} (new space)" else "added to ${sp.title}" }
             ?: links.firstOrNull()?.let { "linked to ${it.title}" } ?: "saved"
-        closeCatch(); catchField.clearText(); attachments.value = emptyList(); lastText = ""
-        say("$what $where", { docs.forEach { repo.trash(it) }; made.forEach { repo.trash(it.id) } })
+        done("$what $where".replaceFirstChar { it.uppercase() }, docs, { docs.forEach { repo.trash(it) }; made.forEach { repo.trash(it.id) } }, p?.raw.orEmpty().ifBlank { if (docs.size == 1) "1 attachment" else "${docs.size} attachments" })
     }
 
     private fun relFor(child: ObjType, parent: KObject) = when {
@@ -316,7 +413,7 @@ class AtlasViewModel(app: Application, private val saved: SavedStateHandle) : An
         val due = if (dueOff.value) null else p.due
         val result: Pair<String, () -> Unit>? = runCatching<Pair<String, () -> Unit>?> {
             if (kind == Sentence.Kind.SPACE) {
-                if (p.target != null && kindOverride.value == null) { say("${p.target.title} already exists — opening it."); closeCatch(); go(Route.Space("p:${p.target.id}")); return }
+                if (p.target != null && kindOverride.value == null) { closeCatch(); go(Route.Space("p:${p.target.id}")); return }
                 val sp = makeSpace(p.title)
                 people.forEach { repo.link(it.id, sp.id, RelType.PART_OF) }
                 return@runCatching "New space: ${sp.title}" to { repo.trash(sp.id) }
@@ -353,10 +450,7 @@ class AtlasViewModel(app: Application, private val saved: SavedStateHandle) : An
                 }
             }
         }.getOrElse { say("Couldn't save — ${it.message}"); null }
-        if (result != null) {
-            closeCatch(); catchField.clearText(); lastText = ""
-            say(result.first, result.second)
-        }
+        if (result != null) done(result.first, emptyList(), result.second, p.raw)
     }
 
     private fun where(links: List<KObject>, made: List<KObject> = emptyList()): String {
@@ -365,22 +459,22 @@ class AtlasViewModel(app: Application, private val saved: SavedStateHandle) : An
         return when { other != null && p != null -> "Saved to $pn, linked to ${other.title}"; other != null -> "Saved, linked to ${other.title}"; p != null -> "Saved to $pn"; else -> "Saved to Today" }
     }
 
-    private fun askNow(question: String) {
+    /** A question about your own things: Atlas's own answer at once, then the model refines it if it's on. */
+    private fun askMine(question: String) {
+        catchField.clearText(); lastText = ""
         askJob?.cancel()
-        ask.value = AskState.Thinking
+        val s = repo.snap
+        val (basis, rule) = runCatching { gather(question, s) }.getOrElse { emptyList<KObject>() to ("Couldn't search just now — ${it.message?.take(60)}" to emptyList()) }
+        val canAi = brainReady() && basis.isNotEmpty()
+        val turn = Turn.Mine(question = question, text = rule.first, ids = rule.second, byAi = false, spaceId = commonProject(s, rule.second), refining = canAi)
+        push(Turn.You(text = question), turn)
+        if (!canAi) return
         askJob = viewModelScope.launch {
-            val s = repo.snap
-            val (basis, rule) = runCatching { withContext(Dispatchers.Default) { gather(question, s) } }
-                .getOrElse { emptyList<KObject>() to ("Couldn't search just now — ${it.message?.take(60)}" to emptyList()) }
-            val canAi = settings.aiMode == AiMode.ON_DEVICE && ai.status.value == Ai.Status.Ready && basis.isNotEmpty()
-            val ruleSpace = commonProject(s, rule.second)
-            // Atlas's own answer shows at once; the on-device model refines it if it's on and answers in time
-            ask.value = AskState.Answer(question, rule.first, rule.second, false, ruleSpace, refining = canAi)
-            if (!canAi) return@launch
-            val ai = withTimeoutOrNull(45_000) { runCatching { ai.answer(question, basis, s) }.getOrNull() }?.takeIf { it.text.isNotBlank() }
-            val cur = ask.value as? AskState.Answer ?: return@launch
-            ask.value = if (ai != null) AskState.Answer(question, ai.text, ai.ids.ifEmpty { rule.second }, true, commonProject(s, ai.ids.ifEmpty { rule.second }) ?: ruleSpace)
-            else cur.copy(refining = false, note = "The on-device model didn’t answer in time — this is Atlas’s own answer.")
+            working.value = "Checking with the model on this phone…"
+            val ai = withTimeoutOrNull(45_000) { runCatching { brain.answer(question, basis, s) }.getOrNull() }?.takeIf { it.text.isNotBlank() }
+            working.value = null
+            replace(turn.id) { cur -> (cur as Turn.Mine).let { if (ai != null) it.copy(text = ai.text, ids = ai.ids.ifEmpty { rule.second }, byAi = true, refining = false, spaceId = commonProject(s, ai.ids.ifEmpty { rule.second }) ?: it.spaceId)
+                else it.copy(refining = false, note = "The model didn’t answer in time — this is Atlas’s own answer.") } }
         }
     }
     private fun commonProject(s: Snapshot, ids: List<String>): String? =
@@ -430,7 +524,7 @@ class AtlasViewModel(app: Application, private val saved: SavedStateHandle) : An
     }
 
     /** "Show them on the board": opens the space the answer is about and rings the items it used. */
-    fun showOnBoard(a: AskState.Answer) {
+    fun showOnBoard(a: Turn.Mine) {
         val p = a.spaceId ?: return
         closeCatch()
         go(Route.Space("p:$p"))
@@ -470,12 +564,12 @@ class AtlasViewModel(app: Application, private val saved: SavedStateHandle) : An
 
     /** On-device model, only if you turned it on and the model is downloaded. Its proposals always wait for you. */
     private suspend fun runAiOn(captureId: String) {
-        if (settings.aiMode != AiMode.ON_DEVICE || ai.status.value != Ai.Status.Ready) return
+        if (!brainReady()) return
         val cap = repo.snap.captures.firstOrNull { it.id == captureId } ?: return
         val text = listOfNotNull(cap.text.takeIf { it.isNotBlank() }, cap.attachmentId?.let { repo.snap.objects[it]?.extracted }).joinToString("\n").trim()
         if (text.length < 12) return
         aiBusy.value = captureId
-        runCatching { ai.extract(text, repo.snap) }.onSuccess { repo.addProposals(captureId, it.map { s -> s.copy(captureId = captureId) }) }
+        runCatching { brain.extract(text, repo.snap) }.onSuccess { repo.addProposals(captureId, it.map { s -> s.copy(captureId = captureId) }) }
             .onFailure { say("On-device AI couldn't read this one. Atlas's rules still did.") }
         aiBusy.value = null
     }
@@ -486,7 +580,7 @@ class AtlasViewModel(app: Application, private val saved: SavedStateHandle) : An
         if (text.isBlank()) { say("There's no text to summarize yet."); return }
         viewModelScope.launch {
             aiBusy.value = id
-            runCatching { ai.summarize(text) }.onSuccess { repo.update(repo.snap.objects[id]!!.copy(summary = it), "Summarized on this phone") }
+            runCatching { brain.summarize(text) }.onSuccess { repo.update(repo.snap.objects[id]!!.copy(summary = it), "Summarized on this phone") }
                 .onFailure { say("The on-device model couldn't run: ${it.message?.take(60)}") }
             aiBusy.value = null
         }

@@ -24,6 +24,14 @@ Capture ─▶ persist original (Note/Document + Capture row) ─▶ extract (on
 | `data.Board` | Band grouping, special spaces, timeline marks, cover lines. Pure, unit-tested. |
 | `capture.Sentence` | Reads what you type into kind · title · date · space · people, or recognises a question. Pure, unit-tested. |
 
+## The Atlas box (0.7)
+
+- `capture/Sentence.intent()` routes a line to FIND / CAPTURE / ASK_MINE / ASK_WORLD / CHAT with no model: parse, search hits, question words, whether a question names your things, and whether the last turn was a general answer.
+- `data/Search` — local index over titles and fields; all words must match; exact > prefix > one-typo; title ×2; recency and links break ties.
+- `integrations/Brain` — the only door to a generative model (`chat`, `answer`, `nameBands`, `extract`, `summarize`). `Ai` (Gemma via LiteRT-LM on the GPU) implements it today; an iOS build would implement it with Apple's Foundation Models.
+- Tiers: instant code first (routing, search, rule answers, briefing, bands, links); the model only refines or answers what code can't; nothing leaves the phone.
+- `AtlasViewModel.thread` holds the conversation (`Turn.You / Did / Mine / World`); it survives closing the box until Clear.
+
 ## Decision records
 **ADR-1 Native Kotlin + Compose + Material 3.** Per spec. Compose BOM 2026.11.01, AGP 9.5.2 with built-in Kotlin, compileSdk 37.
 

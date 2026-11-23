@@ -19,6 +19,12 @@ import com.jmr.atlas.model.ObjType
 
 /** Morph light palette (references/design-tokens.json v1.0). No yellow family anywhere — enforced by TokenTest. */
 object Atlas {
+    // color = state (design 0.7): coral late/blocked, amber waiting, green done; everything else white
+    val LateBg = Color(0xFFFFE3DC); val LateInk = Color(0xFF8F2A1B)
+    val WaitBg = Color(0xFFFFF1D6); val WaitInk = Color(0xFF6E4700)
+    val DoneBg = Color(0xFFDDF2EE); val DoneInk = Color(0xFF1F5C52)
+    // 0.7 — bands are neutral paper; only the Tasks "Late" band is faintly coral.
+    val BandNeutral = Color(0xFFF3EFF5); val BandLate = Color(0xFFFFF0EC)
     val Background = Color(0xFFFBF7FC)
     val Surface = Color(0xFFFFFFFF)
     val SurfaceSecondary = Color(0xFFF4EDF8)
@@ -59,16 +65,11 @@ object Atlas {
 /** Container + accessible foreground for each object type (objectAccentTokens). Color never carries meaning alone: icon + label always accompany it. */
 data class Accent(val container: Color, val content: Color)
 
+/** 0.7: type is an icon, not a color — every type sits on the same quiet chip; people keep their face, spaces their own look. */
 fun accent(t: ObjType): Accent = when (t) {
     ObjType.PERSON -> Accent(Atlas.PrimaryContainer, Atlas.Primary)
     ObjType.PROJECT -> Accent(Atlas.Primary, Color.White)
-    ObjType.DOCUMENT, ObjType.LINK -> Accent(Atlas.PowderBlue, Atlas.BlueText)
-    ObjType.TASK -> Accent(Atlas.CoolMint, Atlas.DeepTeal)
-    ObjType.IDEA, ObjType.IMAGE -> Accent(Atlas.Peach, Atlas.CoralText)
-    ObjType.NOTE -> Accent(Atlas.SurfaceSecondary, Atlas.Primary)
-    ObjType.COLLECTION -> Accent(Atlas.PrimaryContainer, Atlas.DeepPlum)
-    ObjType.EVENT -> Accent(Atlas.CoolMint, Atlas.DeepTeal)
-    ObjType.DECISION -> Accent(Atlas.Peach, Atlas.DeepPlum)
+    else -> Accent(Atlas.Chip, Atlas.DeepPlum)
 }
 
 fun icon(t: ObjType): ImageVector = when (t) {
@@ -148,3 +149,61 @@ private val Scheme = lightColorScheme(
 /** Light only for this release; wallpaper dynamic color is intentionally not used (design-tokens.json allowWallpaperDynamicColors=false). */
 @Composable
 fun AtlasTheme(content: @Composable () -> Unit) = MaterialTheme(colorScheme = Scheme, typography = AtlasType, shapes = AtlasShapes, content = content)
+
+/**
+ * A space's own color and icon (design 0.7, H). Soft, low-chroma colors so they never read as late (coral),
+ * waiting (amber) or done (green). Until you choose, Atlas picks from the space's name.
+ */
+data class SpaceLook(val color: String, val iconName: String, val bg: androidx.compose.ui.graphics.Color, val ink: androidx.compose.ui.graphics.Color, val icon: ImageVector) {
+    companion object {
+        val COLORS = linkedMapOf(
+            "blue" to (androidx.compose.ui.graphics.Color(0xFFDCE8FA) to androidx.compose.ui.graphics.Color(0xFF2F5C93)),
+            "tan" to (androidx.compose.ui.graphics.Color(0xFFF0E2D2) to androidx.compose.ui.graphics.Color(0xFF7A4E25)),
+            "slate" to (androidx.compose.ui.graphics.Color(0xFFE6EDF3) to androidx.compose.ui.graphics.Color(0xFF3E5A73)),
+            "rose" to (androidx.compose.ui.graphics.Color(0xFFF6E3EC) to androidx.compose.ui.graphics.Color(0xFF8C3A5E)),
+            "sage" to (androidx.compose.ui.graphics.Color(0xFFE5F0DC) to androidx.compose.ui.graphics.Color(0xFF46632F)),
+            "lilac" to (androidx.compose.ui.graphics.Color(0xFFEFE6FA) to androidx.compose.ui.graphics.Color(0xFF6A3FA0)),
+        )
+        val ICONS: Map<String, ImageVector> = linkedMapOf(
+            "folder" to androidx.compose.material.icons.Icons.Outlined.Folder,
+            "home" to androidx.compose.material.icons.Icons.Outlined.Home,
+            "health" to androidx.compose.material.icons.Icons.Outlined.MedicalServices,
+            "money" to androidx.compose.material.icons.Icons.Outlined.ReceiptLong,
+            "travel" to androidx.compose.material.icons.Icons.Outlined.Flight,
+            "school" to androidx.compose.material.icons.Icons.Outlined.School,
+            "car" to androidx.compose.material.icons.Icons.Outlined.DirectionsCar,
+            "work" to androidx.compose.material.icons.Icons.Outlined.Work,
+            "garden" to androidx.compose.material.icons.Icons.Outlined.Park,
+            "heart" to androidx.compose.material.icons.Icons.Outlined.FavoriteBorder,
+            "star" to androidx.compose.material.icons.Icons.Outlined.StarOutline,
+            "book" to androidx.compose.material.icons.Icons.Outlined.MenuBook,
+        )
+        private val GUESS = listOf(
+            Regex("surg|health|doctor|medic|hospital|dental|therapy|fitness|gym") to ("blue" to "health"),
+            Regex("home|house|renovat|kitchen|bath|hoa|rental|apartment|move") to ("tan" to "home"),
+            Regex("tax|budget|financ|insur|bank|bill|retire|money|lease") to ("slate" to "money"),
+            Regex("trip|travel|japan|vacation|holiday|flight") to ("rose" to "travel"),
+            Regex("school|kid|class|study|course") to ("sage" to "school"),
+            Regex("car|truck|vehicle") to ("lilac" to "car"),
+            Regex("garden|yard|plant") to ("sage" to "garden"),
+            Regex("work|job|career|client|side project") to ("slate" to "work"),
+            Regex("wedding|family|mom|dad|friend|care") to ("rose" to "heart"),
+            Regex("book|read|club") to ("lilac" to "book"),
+        )
+        fun make(color: String, icon: String): SpaceLook {
+            val (bg, ink) = COLORS[color] ?: COLORS.values.first()
+            return SpaceLook(color, icon, bg, ink, ICONS[icon] ?: ICONS.values.first())
+        }
+        fun guess(title: String): SpaceLook {
+            val t = title.lowercase()
+            GUESS.firstOrNull { it.first.containsMatchIn(t) }?.second?.let { (c, i) -> return make(c, i) }
+            return make(COLORS.keys.elementAt(Math.floorMod(title.hashCode(), COLORS.size)), "folder")
+        }
+        /** The look you chose (a LOOK detail), else Atlas's guess from the name. */
+        fun of(s: com.jmr.atlas.model.Snapshot?, o: com.jmr.atlas.model.KObject): SpaceLook {
+            val v = s?.detailsOf(o.id, com.jmr.atlas.model.DetailKind.LOOK)?.firstOrNull()?.value
+            if (v != null && ':' in v) return make(v.substringBefore(':'), v.substringAfter(':'))
+            return guess(o.title)
+        }
+    }
+}

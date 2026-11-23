@@ -126,9 +126,9 @@ private fun Hero(o: KObject, today: LocalDate, s: Snapshot) {
     val wide = LocalWide.current
     val (bg, ink) = when (o.type) {
         ObjType.PERSON -> faceColors(o)
-        ObjType.IMAGE -> Atlas.Peach to Atlas.CoralText
-        ObjType.PROJECT -> Atlas.PrimaryContainer to Atlas.DeepPlum
-        else -> accent(o.type).let { it.container to it.content }
+        ObjType.IMAGE -> Atlas.Chip to Atlas.DeepPlum
+        ObjType.PROJECT, ObjType.COLLECTION -> com.jmr.atlas.ui.theme.SpaceLook.of(s, o).let { it.bg to it.ink }
+        else -> stateTint(o, today) ?: (Atlas.Chip to Atlas.DeepPlum)
     }
     val thumb = if (o.type == ObjType.IMAGE) rememberThumb(o, 720) else null
     Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(32.dp)).background(bg).testTag("hero")) {
@@ -242,10 +242,7 @@ private fun Connected(vm: AtlasViewModel, s: Snapshot, o: KObject) {
         nb.take(14).forEach { (n, r) ->
             Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(18.dp)).background(Atlas.Surface).clickable(role = Role.Button) { vm.open(n.id) }.padding(horizontal = 14.dp, vertical = 12.dp).testTag("connected_row"),
                 verticalAlignment = Alignment.CenterVertically) {
-                if (n.type == ObjType.PERSON) Face(n, 36.dp)
-                else Box(Modifier.size(36.dp).clip(RoundedCornerShape(11.dp)).background(accent(n.type).container), contentAlignment = Alignment.Center) {
-                    Icon(com.jmr.atlas.ui.theme.icon(n.type), null, Modifier.size(18.dp), tint = accent(n.type).content)
-                }
+                TypeMark(s, n, 36.dp)
                 Spacer(Modifier.width(14.dp))
                 Column(Modifier.weight(1f)) {
                     Text(n.title, style = T.tileTitle.copy(fontSize = 15.sp), color = Atlas.DeepPlum, maxLines = 1, overflow = TextOverflow.Ellipsis)

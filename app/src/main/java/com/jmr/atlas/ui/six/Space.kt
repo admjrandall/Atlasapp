@@ -27,6 +27,7 @@ import androidx.compose.material.icons.outlined.*
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.*
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -86,6 +87,21 @@ fun SpaceScreen(vm: AtlasViewModel, snap: Snapshot, key: String) {
     CompositionLocalProvider(LocalLinkCounts provides linkCounts) {
     Column(Modifier.fillMaxSize().testTag("space")) {
         SpaceHeader(vm, snap, project, kind, today, wide)
+        val listable = kind != null && kind != Board.Kind.TASKS
+        var asList by rememberSaveable(key) { mutableStateOf(bands.size > 6) }
+        var q by rememberSaveable(key) { mutableStateOf("") }
+        if (listable) {
+            FilterField(q, "Filter ${kindItems(snap, kind!!).size} ${kind.title.lowercase()}") { q = it; if (it.isNotBlank()) asList = true }
+            Row(Modifier.padding(horizontal = pad).padding(bottom = 4.dp).testTag("view_toggle"), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                listOf(true to "List", false to "By space").forEach { (v, label) ->
+                    Box(Modifier.heightIn(min = 40.dp).clip(RoundedCornerShape(20.dp)).background(if (asList == v) Atlas.DeepPlum else Atlas.Chip)
+                        .clickable(role = Role.Tab, onClickLabel = label) { asList = v }.padding(horizontal = 16.dp).testTag("view_$label"), contentAlignment = Alignment.Center) {
+                        Text(label, style = T.metaStrong.copy(fontSize = 14.sp), color = if (asList == v) Color.White else Atlas.DeepPlum)
+                    }
+                }
+            }
+        }
+        if (listable && asList) { KindList(vm, snap, kind!!, q); return@Column }
         if (ringed != null && hl != null) {
             Row(Modifier.padding(horizontal = pad).padding(top = 10.dp).fillMaxWidth().clip(RoundedCornerShape(16.dp)).background(Atlas.DeepPlum).padding(start = 16.dp, end = 6.dp, top = 6.dp, bottom = 6.dp),
                 verticalAlignment = Alignment.CenterVertically) {
@@ -201,7 +217,7 @@ private fun BandView(
     selected: String?, related: Set<String>, ringed: Set<String>?, expanded: Boolean, onToggle: () -> Unit,
     place: (String, LayoutCoordinates) -> Unit,
 ) {
-    val tint = Atlas.bands[b.tint % 4]
+    val tint = if (b.key == "t:Late") Atlas.BandLate else Atlas.BandNeutral   // color is state, not decoration (0.7)
     val gap = 10.dp
     val tileH = if (wide) 104.dp else 116.dp
     Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(if (wide) 28.dp else 24.dp)).background(tint).padding(12.dp).testTag("band")) {

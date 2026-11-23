@@ -48,12 +48,11 @@ import androidx.compose.ui.unit.sp
 import com.jmr.atlas.LocalPlatform
 import com.jmr.atlas.capture.Sentence
 import com.jmr.atlas.model.*
-import com.jmr.atlas.ui.AskState
 import com.jmr.atlas.ui.AtlasViewModel
 import com.jmr.atlas.ui.theme.Atlas
 import com.jmr.atlas.ui.theme.T
 
-private const val PLACEHOLDER = "Catch a thought, or ask anything"
+private const val PLACEHOLDER = "Tell or ask Atlas anything"
 
 /**
  * The one input on every screen (design 0.6, shaped like Claude's): + · text · mic · send in a single row.
@@ -66,7 +65,7 @@ fun CatchBar(vm: AtlasViewModel, modifier: Modifier = Modifier) {
     Row(modifier.fillMaxWidth().shadow(14.dp, RoundedCornerShape(30.dp), ambientColor = Atlas.DeepPlum, spotColor = Atlas.DeepPlum).clip(RoundedCornerShape(30.dp))
         .background(Atlas.Surface).border(1.dp, Atlas.Border, RoundedCornerShape(30.dp)).padding(8.dp).testTag("catch_bar"), verticalAlignment = Alignment.CenterVertically) {
         CircleButton(Icons.Outlined.Add, "Add a photo, scan or file", outlined = true) { vm.openCatch(); vm.attachOpen.value = true }
-        Text(if (LocalWide.current) PLACEHOLDER else "Catch or ask", style = T.input, color = Atlas.Hint, maxLines = 1, overflow = TextOverflow.Ellipsis,
+        Text(if (LocalWide.current) PLACEHOLDER else "Tell or ask Atlas", style = T.input, color = Atlas.Hint, maxLines = 1, overflow = TextOverflow.Ellipsis,
             modifier = Modifier.weight(1f).heightIn(min = 44.dp).clip(RoundedCornerShape(12.dp)).clickable(role = Role.Button, onClickLabel = "Type") { vm.openCatch() }
                 .padding(horizontal = 10.dp).wrapContentHeight(Alignment.CenterVertically).testTag("catch_open"))
         CircleButton(Icons.Outlined.Mic, "Talk") { platform.dictate { t -> vm.openCatch(t) } }
@@ -97,10 +96,15 @@ fun CatchSheet(vm: AtlasViewModel, snap: Snapshot) {
     val ctxId by vm.context.collectAsState()
     val extra by vm.extraLinks.collectAsState()
     val attach by vm.attachOpen.collectAsState()
-    val ask by vm.ask.collectAsState()
+    val thread by vm.thread.collectAsState()
     val files by vm.attachments.collectAsState()
     val newLinks by vm.newLinks.collectAsState()
     val parsed = remember(text, snap, ctxId) { if (text.isBlank()) null else vm.parsed(text) }
+    // what Atlas reads the line as, decided by its own code as you type
+    val intent = remember(text, snap, thread.size) { if (text.isBlank()) null else vm.intentOf(text) }
+    val hits = remember(text, snap) {
+        if (text.isBlank()) emptyList() else vm.find(if (com.jmr.atlas.capture.Sentence.isQuestion(text)) com.jmr.atlas.capture.Sentence.searchTerms(text).ifBlank { text } else (parsed?.title ?: text))
+    }
     var picking by remember { mutableStateOf(false) }
     val focus = remember { FocusRequester() }
     val focusManager = androidx.compose.ui.platform.LocalFocusManager.current
@@ -123,8 +127,6 @@ fun CatchSheet(vm: AtlasViewModel, snap: Snapshot) {
             val ctx = ctxId?.let { snap.objects[it] }
             when {
                 picking -> LinkPicker(vm, snap, exclude = setOfNotNull(ctxId) + extra) { picking = false }
-                ask is AskState.Thinking -> Bubble("Looking through your things…")
-                ask is AskState.Answer -> AnswerCard(vm, snap, ask as AskState.Answer)
                 parsed == null && files.isNotEmpty() ->
                     if (newLinks.isNotEmpty() || extra.isNotEmpty()) Preview(vm, snap, vm.parsed("x").copy(raw = "", title = "", space = null, people = emptyList(), mentions = emptyList(), target = null, newSpace = null), Sentence.Kind.NOTE, ctx, extra, newLinks, dropped, dueOff, files.size, onSend = { vm.send() }) { picking = true }
                     else Column(Modifier.fillMaxWidth().shadow(12.dp, RoundedCornerShape(26.dp)).clip(RoundedCornerShape(26.dp)).background(Atlas.Background).padding(horizontal = 20.dp, vertical = 18.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
@@ -133,16 +135,19 @@ fun CatchSheet(vm: AtlasViewModel, snap: Snapshot) {
                         Row(verticalAlignment = Alignment.CenterVertically) { LinkButton { picking = true }; Spacer(Modifier.weight(1f)); SendPill(if (files.size == 1) "Save it" else "Save ${files.size}") { vm.send() } }
                     }
                 parsed == null && attach -> {}
+                parsed == null && thread.isNotEmpty() -> AtlasPanel(vm, showClear = true) { ThreadView(vm, snap, thread) }
                 parsed == null -> Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
                     if (ctx != null) Bubble("Adding to ${ctx.title}")
                     Examples(vm, ctx)
                 }
-                parsed.question && files.isEmpty() -> Row(Modifier.fillMaxWidth().shadow(12.dp, RoundedCornerShape(26.dp)).clip(RoundedCornerShape(26.dp)).background(Atlas.Background).padding(start = 20.dp, end = 10.dp, top = 10.dp, bottom = 10.dp),
-                    verticalAlignment = Alignment.CenterVertically) {
-                    Text("Sounds like a question.", style = T.meta.copy(fontSize = 15.sp), color = Atlas.SecondaryText, modifier = Modifier.weight(1f))
-                    SendPill("Ask") { vm.send() }
+                files.isEmpty() && intent == com.jmr.atlas.capture.Sentence.Intent.FIND -> AtlasPanel(vm, showClear = false) { FindResults(vm, snap, text, hits) }
+                files.isEmpty() && intent == com.jmr.atlas.capture.Sentence.Intent.ASK_MINE -> QuestionHint(vm, mine = true, inChat = false)
+                files.isEmpty() && (intent == com.jmr.atlas.capture.Sentence.Intent.ASK_WORLD || intent == com.jmr.atlas.capture.Sentence.Intent.CHAT) ->
+                    QuestionHint(vm, mine = false, inChat = intent == com.jmr.atlas.capture.Sentence.Intent.CHAT)
+                else -> Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    if (files.isEmpty()) AlsoInAtlas(vm, snap, hits.filter { h -> h.inTitle && h.o.id != ctxId && parsed.people.none { it.id == h.o.id } && parsed.space?.id != h.o.id })
+                    Preview(vm, snap, parsed, vm.kindOf(parsed), ctx, extra, newLinks, dropped, dueOff, files.size, onSend = { vm.send() }) { picking = true }
                 }
-                else -> Preview(vm, snap, parsed, vm.kindOf(parsed), ctx, extra, newLinks, dropped, dueOff, files.size, onSend = { vm.send() }) { picking = true }
             }
             AnimatedVisibility(attach, enter = fadeIn(), exit = fadeOut()) {
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -159,7 +164,7 @@ fun CatchSheet(vm: AtlasViewModel, snap: Snapshot) {
                 verticalAlignment = Alignment.Bottom) {
                 CircleButton(Icons.Outlined.Add, if (attach) "Hide attachments" else "Add a photo, scan or file", outlined = true, rotate = if (attach) 45f else 0f) { vm.attachOpen.value = !attach }
                 Box(Modifier.weight(1f).heightIn(min = 44.dp).padding(horizontal = 10.dp, vertical = 10.dp), contentAlignment = Alignment.CenterStart) {
-                    if (text.isEmpty()) Text(if (LocalWide.current) PLACEHOLDER else "Catch or ask", style = T.input, color = Atlas.Hint, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    if (text.isEmpty()) Text(if (LocalWide.current) PLACEHOLDER else "Tell or ask Atlas", style = T.input, color = Atlas.Hint, maxLines = 1, overflow = TextOverflow.Ellipsis)
                     BasicTextField(vm.catchField, Modifier.fillMaxWidth().focusRequester(focus).onFocusChanged { typing = it.isFocused }.testTag("catch_input"), textStyle = T.input.copy(color = Atlas.DeepPlum),
                         // multi-line fields get a return key, not an action key — so a typed return means "send"
                         inputTransformation = remember { EnterSends { enterHit++ } },
@@ -167,7 +172,7 @@ fun CatchSheet(vm: AtlasViewModel, snap: Snapshot) {
                         onKeyboardAction = { vm.send() }, lineLimits = TextFieldLineLimits.MultiLine(1, 5))
                 }
                 CircleButton(Icons.Outlined.Mic, "Talk") { platform.dictate { t -> vm.setCatch((vm.catchText.trimEnd() + " " + t).trim()) } }
-                CircleButton(Icons.Outlined.ArrowUpward, if (parsed?.question == true) "Ask" else "Save", filled = text.isNotBlank() || files.isNotEmpty(), enabled = text.isNotBlank() || files.isNotEmpty()) { vm.send() }
+                CircleButton(Icons.Outlined.ArrowUpward, when (intent) { com.jmr.atlas.capture.Sentence.Intent.FIND -> "Open"; com.jmr.atlas.capture.Sentence.Intent.CAPTURE, null -> "Save"; else -> "Ask" }, filled = text.isNotBlank() || files.isNotEmpty(), enabled = text.isNotBlank() || files.isNotEmpty()) { vm.send() }
             }
         }
     }
@@ -190,7 +195,7 @@ private fun Examples(vm: AtlasViewModel, ctx: KObject?) {
         ObjType.PERSON -> listOf("Send ${ctx.firstName} the deposit by Friday", "Remember: prefers texts", "What does ${ctx.firstName} owe me?")
         ObjType.TASK -> listOf("Check the haul-away fee", "Call about it tomorrow", "What’s left on this?")
         ObjType.PROJECT -> listOf("Order samples by Friday", "Idea: open shelving", "What’s late here?")
-        else -> if (vm.currentProject != null) listOf("Order samples by Friday", "Idea: open shelving", "What’s late here?") else listOf("Call the dentist tomorrow", "Idea: a reading nook", "What’s due this week?")
+        else -> if (vm.currentProject != null) listOf("Order samples by Friday", "Idea: open shelving", "What’s late here?") else listOf("Call the dentist tomorrow", "Idea: a reading nook", "What’s due this week?", "Why is the sky blue?")
     }
     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
         ex.forEach { e ->
@@ -367,39 +372,6 @@ private fun LinkPicker(vm: AtlasViewModel, s: Snapshot, exclude: Set<String>, on
                         }
                     }
                 }
-            }
-        }
-    }
-}
-
-@Composable
-private fun AnswerCard(vm: AtlasViewModel, s: Snapshot, a: AskState.Answer) {
-    Column(Modifier.fillMaxWidth().heightIn(max = 520.dp).shadow(12.dp, RoundedCornerShape(26.dp)).clip(RoundedCornerShape(26.dp)).background(Atlas.Background).verticalScroll(rememberScrollState()).padding(20.dp).testTag("answer"),
-        verticalArrangement = Arrangement.spacedBy(12.dp)) {
-        Text(a.text, style = T.heroTitle.copy(fontSize = 22.sp, lineHeight = 28.sp, fontWeight = androidx.compose.ui.text.font.FontWeight.Bold), color = Atlas.DeepPlum)
-        val items = a.ids.mapNotNull { s.objects[it] }.take(6)
-        items.forEachIndexed { i, o ->
-            val (label, lc) = humanLabel(o, s, java.time.LocalDate.now())
-            Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(14.dp)).clickable(role = Role.Button) { vm.closeCatch(); vm.reveal(o.id) }.padding(vertical = 6.dp), verticalAlignment = Alignment.Top) {
-                Text("${i + 1}", style = T.title.copy(fontSize = 22.sp, lineHeight = 26.sp), color = if (lc == Atlas.CoralText) Atlas.CoralText else Atlas.Primary, modifier = Modifier.width(26.dp))
-                Column(Modifier.weight(1f)) {
-                    Text(o.title.removePrefix("Expect ").replaceFirstChar { it.uppercase() }, style = T.tileTitle, color = Atlas.DeepPlum, maxLines = 2, overflow = TextOverflow.Ellipsis)
-                    Text(label, style = T.meta, color = lc)
-                }
-                Icon(Icons.AutoMirrored.Outlined.KeyboardArrowRight, null, tint = Atlas.Hint)
-            }
-        }
-        if (a.refining) Row(verticalAlignment = Alignment.CenterVertically) {
-            androidx.compose.material3.CircularProgressIndicator(Modifier.size(14.dp), strokeWidth = 2.dp, color = Atlas.Primary)
-            Spacer(Modifier.width(8.dp)); Text("Asking the on-device model too…", style = T.meta, color = Atlas.SecondaryText)
-        }
-        a.note?.let { Text(it, style = T.meta, color = Atlas.SecondaryText) }
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            AtlasDid(if (a.byAi) "Answered on this phone by the on-device model" else "Put together on this phone from your things", Modifier.weight(1f))
-            if (a.spaceId != null && a.ids.isNotEmpty()) {
-                Spacer(Modifier.width(10.dp))
-                Box(Modifier.heightIn(min = 44.dp).clip(RoundedCornerShape(14.dp)).background(Atlas.DeepPlum).clickable(role = Role.Button) { vm.showOnBoard(a) }.padding(horizontal = 16.dp).testTag("show_on_board"),
-                    contentAlignment = Alignment.Center) { Text("Show on the board", style = T.metaStrong.copy(fontSize = 14.sp), color = Color.White) }
             }
         }
     }
