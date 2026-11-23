@@ -2,6 +2,13 @@
 
 Honest status. "Verified" = automated test or inspected screenshot (Robolectric). Nothing has run on a physical Fold 6 yet; items marked **device-only** can only be proven there.
 
+## 0.6.3 — input box closing by itself; sending from the sentence
+
+| Reported | Cause | Fix | Test |
+|---|---|---|---|
+| Box closes when typing/choosing (esp. from the widget) | Taps in the gaps of the sheet fell through to the backdrop, which closed it; from the widget the keyboard is still sliding the sheet up when you tap. Closing also discarded the draft | Sheet consumes its own taps; backdrop ignores taps for 0.7 s after opening; with a draft the first backdrop tap only hides the keyboard; drafts (text and attachments) survive closing | `backdropDoesntThrowAwayADraft` |
+| Hitting the round send button is awkward | Multi-line fields get a return key, not an action key, so Enter added a newline | Return sends (InputTransformation); a "Save task / Add step / Make space / Save 2" button on the sentence card; "Ask" on the question bubble | `returnKeySends`, `sendButtonOnTheSentence` |
+
 ## 0.6.2 — put things in spaces that don't exist yet
 
 | Asked | Done | Test |

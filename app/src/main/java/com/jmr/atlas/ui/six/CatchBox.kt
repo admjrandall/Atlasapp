@@ -11,6 +11,9 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.input.TextFieldLineLimits
 import androidx.compose.foundation.text.BasicTextField
@@ -86,6 +89,8 @@ fun CatchSheet(vm: AtlasViewModel, snap: Snapshot) {
     val platform = LocalPlatform.current
     val text = vm.catchField.text.toString()          // snapshot state: recomposes as you type, no lag
     LaunchedEffect(text) { vm.textChanged(text) }
+    var enterHit by remember { mutableStateOf(0) }
+    LaunchedEffect(enterHit) { if (enterHit > 0) vm.send() }
     val kindOv by vm.kindOverride.collectAsState()
     val dropped by vm.dropped.collectAsState()
     val dueOff by vm.dueOff.collectAsState()
@@ -98,30 +103,46 @@ fun CatchSheet(vm: AtlasViewModel, snap: Snapshot) {
     val parsed = remember(text, snap, ctxId) { if (text.isBlank()) null else vm.parsed(text) }
     var picking by remember { mutableStateOf(false) }
     val focus = remember { FocusRequester() }
+    val focusManager = androidx.compose.ui.platform.LocalFocusManager.current
+    var typing by remember { mutableStateOf(false) }
     LaunchedEffect(Unit) { runCatching { focus.requestFocus() } }
 
     Box(Modifier.fillMaxSize().testTag("catch_sheet")) {
-        Box(Modifier.fillMaxSize().background(Atlas.DeepPlum.copy(alpha = 0.5f)).clickable(interactionSource = remember { MutableInteractionSource() }, indication = null, onClickLabel = "Close") { vm.closeCatch() })
-        Column(Modifier.align(Alignment.BottomCenter).fillMaxWidth().imePadding().padding(horizontal = pad).padding(bottom = 14.dp).widthIn(max = 760.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+        // The backdrop. Taps in the first moment (keyboard still sliding the sheet up) are ignored; with a draft, a tap
+        // only puts the keyboard away — a second tap closes, and the draft is kept either way.
+        Box(Modifier.fillMaxSize().background(Atlas.DeepPlum.copy(alpha = 0.5f)).testTag("catch_scrim").clickable(interactionSource = remember { MutableInteractionSource() }, indication = null, onClickLabel = "Close") {
+            when {
+                android.os.SystemClock.uptimeMillis() - vm.catchOpenedAt < 700 -> {}
+                typing && (text.isNotBlank() || files.isNotEmpty()) -> focusManager.clearFocus()
+                else -> vm.closeCatch()
+            }
+        })
+        Column(Modifier.align(Alignment.BottomCenter).fillMaxWidth().imePadding().padding(horizontal = pad).padding(bottom = 14.dp).widthIn(max = 760.dp)
+            // a tap between the cards belongs to the sheet, not to the backdrop behind it
+            .pointerInput(Unit) { detectTapGestures { } }, verticalArrangement = Arrangement.spacedBy(12.dp)) {
             val ctx = ctxId?.let { snap.objects[it] }
             when {
                 picking -> LinkPicker(vm, snap, exclude = setOfNotNull(ctxId) + extra) { picking = false }
                 ask is AskState.Thinking -> Bubble("Looking through your things…")
                 ask is AskState.Answer -> AnswerCard(vm, snap, ask as AskState.Answer)
                 parsed == null && files.isNotEmpty() ->
-                    if (newLinks.isNotEmpty() || extra.isNotEmpty()) Preview(vm, snap, vm.parsed("x").copy(raw = "", title = "", space = null, people = emptyList(), mentions = emptyList(), target = null, newSpace = null), Sentence.Kind.NOTE, ctx, extra, newLinks, dropped, dueOff, files.size) { picking = true }
+                    if (newLinks.isNotEmpty() || extra.isNotEmpty()) Preview(vm, snap, vm.parsed("x").copy(raw = "", title = "", space = null, people = emptyList(), mentions = emptyList(), target = null, newSpace = null), Sentence.Kind.NOTE, ctx, extra, newLinks, dropped, dueOff, files.size, onSend = { vm.send() }) { picking = true }
                     else Column(Modifier.fillMaxWidth().shadow(12.dp, RoundedCornerShape(26.dp)).clip(RoundedCornerShape(26.dp)).background(Atlas.Background).padding(horizontal = 20.dp, vertical = 18.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
                         val it_ = if (files.size == 1) "it" else "them"
                         Text(if (ctx != null) "Send to add $it_ to ${ctx.title}, or type where $it_ should go." else "Type where $it_ should go — “Add to Ankle Surgery” makes the space if it’s new — or just send.", style = T.meta.copy(fontSize = 15.sp), color = Atlas.DeepPlum)
-                        LinkButton { picking = true }
+                        Row(verticalAlignment = Alignment.CenterVertically) { LinkButton { picking = true }; Spacer(Modifier.weight(1f)); SendPill(if (files.size == 1) "Save it" else "Save ${files.size}") { vm.send() } }
                     }
                 parsed == null && attach -> {}
                 parsed == null -> Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
                     if (ctx != null) Bubble("Adding to ${ctx.title}")
                     Examples(vm, ctx)
                 }
-                parsed.question && files.isEmpty() -> Bubble("Sounds like a question. Send to ask.")
-                else -> Preview(vm, snap, parsed, vm.kindOf(parsed), ctx, extra, newLinks, dropped, dueOff, files.size) { picking = true }
+                parsed.question && files.isEmpty() -> Row(Modifier.fillMaxWidth().shadow(12.dp, RoundedCornerShape(26.dp)).clip(RoundedCornerShape(26.dp)).background(Atlas.Background).padding(start = 20.dp, end = 10.dp, top = 10.dp, bottom = 10.dp),
+                    verticalAlignment = Alignment.CenterVertically) {
+                    Text("Sounds like a question.", style = T.meta.copy(fontSize = 15.sp), color = Atlas.SecondaryText, modifier = Modifier.weight(1f))
+                    SendPill("Ask") { vm.send() }
+                }
+                else -> Preview(vm, snap, parsed, vm.kindOf(parsed), ctx, extra, newLinks, dropped, dueOff, files.size, onSend = { vm.send() }) { picking = true }
             }
             AnimatedVisibility(attach, enter = fadeIn(), exit = fadeOut()) {
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -139,7 +160,9 @@ fun CatchSheet(vm: AtlasViewModel, snap: Snapshot) {
                 CircleButton(Icons.Outlined.Add, if (attach) "Hide attachments" else "Add a photo, scan or file", outlined = true, rotate = if (attach) 45f else 0f) { vm.attachOpen.value = !attach }
                 Box(Modifier.weight(1f).heightIn(min = 44.dp).padding(horizontal = 10.dp, vertical = 10.dp), contentAlignment = Alignment.CenterStart) {
                     if (text.isEmpty()) Text(if (LocalWide.current) PLACEHOLDER else "Catch or ask", style = T.input, color = Atlas.Hint, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                    BasicTextField(vm.catchField, Modifier.fillMaxWidth().focusRequester(focus).testTag("catch_input"), textStyle = T.input.copy(color = Atlas.DeepPlum),
+                    BasicTextField(vm.catchField, Modifier.fillMaxWidth().focusRequester(focus).onFocusChanged { typing = it.isFocused }.testTag("catch_input"), textStyle = T.input.copy(color = Atlas.DeepPlum),
+                        // multi-line fields get a return key, not an action key — so a typed return means "send"
+                        inputTransformation = remember { EnterSends { enterHit++ } },
                         cursorBrush = SolidColor(Atlas.Primary), keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.Sentences, imeAction = ImeAction.Send),
                         onKeyboardAction = { vm.send() }, lineLimits = TextFieldLineLimits.MultiLine(1, 5))
                 }
@@ -179,7 +202,7 @@ private fun Examples(vm: AtlasViewModel, ctx: KObject?) {
 
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
-private fun Preview(vm: AtlasViewModel, s: Snapshot, p: Sentence.Parsed, kind: Sentence.Kind, ctx: KObject?, extra: List<String>, newLinks: List<String>, dropped: Set<String>, dueOff: Boolean, files: Int, onLink: () -> Unit) {
+private fun Preview(vm: AtlasViewModel, s: Snapshot, p: Sentence.Parsed, kind: Sentence.Kind, ctx: KObject?, extra: List<String>, newLinks: List<String>, dropped: Set<String>, dueOff: Boolean, files: Int, onSend: () -> Unit = {}, onLink: () -> Unit) {
     val asSpace = kind == Sentence.Kind.SPACE && files == 0
     Column(Modifier.fillMaxWidth().shadow(12.dp, RoundedCornerShape(26.dp)).clip(RoundedCornerShape(26.dp)).background(Atlas.Background).padding(horizontal = 20.dp, vertical = 18.dp).testTag("catch_preview"),
         verticalArrangement = Arrangement.spacedBy(12.dp)) {
@@ -234,6 +257,36 @@ private fun Preview(vm: AtlasViewModel, s: Snapshot, p: Sentence.Parsed, kind: S
         }
         if (!kind.addsToContext && !asSpace && files == 0 && p.space == null && p.newSpace == null && p.target == null && newLinks.isEmpty() && ctx == null && p.people.isEmpty() && extra.isEmpty())
             Text("Goes to Today. Add “add to Ankle Surgery”, type @ and a name, or tap Link to file it — new spaces are made for you.", style = T.meta, color = Atlas.SecondaryText)
+        // the send button sits on the sentence you're reading, named for what it does
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) { SendPill(sendLabel(kind, files, p, ctx), onSend) }
+    }
+}
+
+private fun sendLabel(kind: Sentence.Kind, files: Int, p: Sentence.Parsed, ctx: KObject?): String = when {
+    files > 0 -> if (files == 1) "Save it" else "Save $files"
+    kind == Sentence.Kind.SPACE -> if (p.target != null) "Open it" else "Make space"
+    kind == Sentence.Kind.STEP -> "Add step"
+    kind == Sentence.Kind.REMEMBER -> "Remember"
+    kind == Sentence.Kind.UPDATE -> "Post update"
+    else -> "Save ${kind.label.lowercase()}"
+}
+
+@Composable
+private fun SendPill(label: String, onClick: () -> Unit) =
+    Row(Modifier.heightIn(min = 44.dp).clip(RoundedCornerShape(22.dp)).background(Atlas.Primary).clickable(role = Role.Button, onClickLabel = label, onClick = onClick).padding(start = 18.dp, end = 14.dp).testTag("preview_send"),
+        verticalAlignment = Alignment.CenterVertically) {
+        Text(label, style = T.metaStrong.copy(fontSize = 15.sp), color = Color.White)
+        Spacer(Modifier.width(6.dp))
+        Icon(Icons.Outlined.ArrowUpward, null, Modifier.size(16.dp), tint = Color.White)
+    }
+
+/** A typed return (soft keyboard's ⏎ in a multi-line field, or a hardware Enter) is taken out of the text and means "send". */
+private class EnterSends(val onEnter: () -> Unit) : androidx.compose.foundation.text.input.InputTransformation {
+    override fun androidx.compose.foundation.text.input.TextFieldBuffer.transformInput() {
+        val t = asCharSequence()
+        val i = t.indexOf('\n'); if (i < 0) return
+        replace(0, length, t.toString().replace("\n", " ").trimEnd())
+        onEnter()
     }
 }
 

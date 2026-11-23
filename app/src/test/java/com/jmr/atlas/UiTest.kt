@@ -370,4 +370,39 @@ class InputUiTest {
         val t = rule.repo().snap.live.first { it.title == "Book physical therapy" }
         assertTrue(rule.repo().snap.neighbours(t.id).any { it.first.id == sp.id })
     }
+
+    private fun later() { org.robolectric.shadows.ShadowSystemClock.advanceBy(java.time.Duration.ofSeconds(1)); rule.settle() }
+
+    @Test @Config(sdk = [36], qualifiers = "w707dp-h823dp-port-xhdpi")
+    fun returnKeySends() {
+        rule.example()
+        rule.type("Call the pharmacy tomorrow\n")
+        assertTrue(rule.repo().snap.live.any { it.type == ObjType.TASK && it.title == "Call the pharmacy" })
+        assertTrue(gone("catch_sheet"))
+    }
+
+    @Test @Config(sdk = [36], qualifiers = "w707dp-h823dp-port-xhdpi")
+    fun sendButtonOnTheSentence() {
+        rule.example()
+        rule.type("Ask about crutches add to Ankle Surgery")
+        rule.onNodeWithTag("preview_send").assert(hasText("Save task", substring = true))
+        rule.shot("n14_send_on_card")
+        rule.tap("preview_send")
+        assertTrue(rule.repo().snap.live.any { it.title == "Ask about crutches" })
+    }
+
+    @Test @Config(sdk = [36], qualifiers = "w707dp-h823dp-port-xhdpi")
+    fun backdropDoesntThrowAwayADraft() {
+        rule.example()
+        rule.vm { it.openCatch() }; rule.settle()
+        rule.tap("catch_scrim")                                   // right after opening: ignored
+        rule.onNodeWithTag("catch_sheet").assertExists()
+        rule.onNodeWithTag("catch_input").performTextInput("Pick up crutches Friday"); later()
+        rule.tap("catch_scrim")                                   // with a draft: only the keyboard goes away
+        rule.onNodeWithTag("catch_sheet").assertExists()
+        later(); rule.tap("catch_scrim")                          // second tap closes…
+        assertTrue(gone("catch_sheet"))
+        rule.tap("catch_open")                                    // …and the draft is still there
+        rule.onNodeWithTag("catch_input").assert(hasText("Pick up crutches Friday"))
+    }
 }

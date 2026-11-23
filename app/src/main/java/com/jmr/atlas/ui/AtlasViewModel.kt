@@ -193,12 +193,17 @@ class AtlasViewModel(app: Application, private val saved: SavedStateHandle) : An
     private var askJob: Job? = null
     private var lastText = ""
 
-    fun openCatch(prefill: String = "") {
-        catchField.setTextAndPlaceCursorAtEnd(prefill)
+    /** Opens the input box. Without [prefill] whatever you'd typed before is still there (a draft survives closing). */
+    fun openCatch(prefill: String? = null) {
+        if (prefill != null) catchField.setTextAndPlaceCursorAtEnd(prefill)
+        catchOpenedAt = android.os.SystemClock.uptimeMillis()
         context.value = (route as? Route.Item)?.id ?: boardSel.value?.takeIf { route is Route.Space }
         resetParts(); attachOpen.value = false; ask.value = AskState.Idle; catchOpen.value = true
     }
-    fun closeCatch() { catchOpen.value = false; askJob?.cancel(); ask.value = AskState.Idle; attachOpen.value = false; attachments.value = emptyList() }
+    /** Closes the box; the draft (text and attachments) stays for next time. Sending is what clears it. */
+    fun closeCatch() { catchOpen.value = false; askJob?.cancel(); ask.value = AskState.Idle; attachOpen.value = false }
+    /** When the box last opened: taps on the backdrop right after (keyboard still sliding in) are ignored. */
+    var catchOpenedAt = 0L; private set
     private fun resetParts() { kindOverride.value = null; dropped.value = emptySet(); dueOff.value = false; extraLinks.value = emptyList(); newLinks.value = emptyList(); lastText = catchText }
 
     /** A photo, scan or file picked from the input box waits there; picked from anywhere else it's saved straight away. */
@@ -290,7 +295,7 @@ class AtlasViewModel(app: Application, private val saved: SavedStateHandle) : An
         val what = if (docs.size == 1) (if (files[0].read.mime.startsWith("image/")) "Photo" else "File") else "${docs.size} ${if (files.all { it.read.mime.startsWith("image/") }) "photos" else "files"}"
         val where = links.firstOrNull { it.type == ObjType.PROJECT }?.let { sp -> if (made.any { it.id == sp.id }) "added to ${sp.title} (new space)" else "added to ${sp.title}" }
             ?: links.firstOrNull()?.let { "linked to ${it.title}" } ?: "saved"
-        closeCatch(); catchField.clearText(); lastText = ""
+        closeCatch(); catchField.clearText(); attachments.value = emptyList(); lastText = ""
         say("$what $where", { docs.forEach { repo.trash(it) }; made.forEach { repo.trash(it.id) } })
     }
 
