@@ -318,14 +318,15 @@ class InputUiTest {
         assertEquals(0, rule.repo().snap.objects.values.count { it.origin == Origin.EXAMPLE })
         rule.onAllNodesWithTag("home_new_space").onFirst().performClick(); rule.settle()
         rule.onNodeWithTag("catch_input").assertTextContains("New space", substring = true)
-        rule.activityRule.scenario.onActivity { it.onBackPressedDispatcher.onBackPressed() }; rule.settle()
-        rule.vm { it.loadExample() }
+        rule.vm { it.closeCatch() }
+        rule.tap("nav_Settings"); rule.onNodeWithTag("settings").assertIsDisplayed()
+        rule.onNodeWithTag("load_example").performScrollTo().performClick(); rule.settle()
         assertTrue(rule.repo().snap.objects.values.any { it.origin == Origin.EXAMPLE })
         val n = rule.repo().snap.objects.size
         rule.vm { it.loadExample() }
         assertEquals("loading twice adds nothing", n, rule.repo().snap.objects.size)
         rule.tap("nav_Settings")
-        rule.onNodeWithText("Remove example workspace").performScrollTo().assertIsDisplayed()
+        rule.onNodeWithTag("remove_example").performScrollTo().assertIsDisplayed()
     }
 
     @Test @Config(sdk = [36], qualifiers = "w707dp-h823dp-port-xhdpi")

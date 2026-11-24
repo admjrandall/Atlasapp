@@ -95,8 +95,8 @@ fun SettingsScreen(vm: AtlasViewModel, snap: Snapshot) {
             SettingsGroup("Your data") {
                 SRow(Icons.Outlined.Download, "Export everything", "Readable copy you keep (files listed, not included)") { platform.export(vm.repo.exportJson()) }
                 SRow(Icons.Outlined.Delete, "Trash", if (trashed == 0) "Empty" else plural(trashed, "item")) { vm.go(Route.Trash) }
-                if (examples > 0) SRow(Icons.Outlined.CleaningServices, "Remove example workspace", plural(examples, "example item")) { vm.show(Overlay.RemoveExample) }
-                else SRow(Icons.Outlined.Lightbulb, "Load example workspace", "Sample spaces, people and tasks · remove any time") { vm.loadExample() }
+                if (examples > 0) SRow(Icons.Outlined.CleaningServices, "Remove example workspace", plural(examples, "example item"), tag = "remove_example") { vm.show(Overlay.RemoveExample) }
+                else SRow(Icons.Outlined.Lightbulb, "Load example workspace", "Sample spaces, people and tasks · remove any time", tag = "load_example") { vm.loadExample() }
                 SRow(Icons.Outlined.DeleteForever, "Erase everything", "All items, connections and files on this phone", danger = true) { confirmWipe = true }
             }
             Text("Atlas 0.5 · No ads, analytics or tracking. Roboto Flex © Google (OFL 1.1). ML Kit, LiteRT-LM © Google. Gemma 4 (Apache 2.0). SQLCipher © Zetetic (BSD).",
