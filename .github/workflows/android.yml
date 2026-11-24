@@ -34,7 +34,12 @@ jobs:
       # Maven Central sometimes answers 429 (rate limited) on a cold cache; resolve dependencies with one retry first,
       # so a real test failure is never retried.
       - name: Resolve dependencies
-        run: ./gradlew :app:dependencies --configuration debugUnitTestRuntimeClasspath > /dev/null || (sleep 60 && ./gradlew :app:dependencies --configuration debugUnitTestRuntimeClasspath > /dev/null)
+        run: |
+          for i in 1 2 3; do
+            ./gradlew :app:dependencies --configuration debugUnitTestRuntimeClasspath $([ $i -gt 1 ] && echo --refresh-dependencies) > /dev/null && exit 0
+            echo "Dependency download failed (try $i); waiting before retry"; sleep 90
+          done
+          exit 1
 
       - name: Unit and UI tests (Robolectric)
         run: ./gradlew --stacktrace testDebugUnitTest
