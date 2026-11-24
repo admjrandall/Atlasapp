@@ -1,0 +1,93 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
+<title>Renovation, hands on</title>
+<style>
+/*
+VOICE: a workshop you touch; calm, crafted, satisfying
+IDEA: each stop of the trail is a bench where you do the real step with your fingers
+PICTURE: full-screen 3D bench per stage: blueprint, balance scale, blocker wall, frame, room
+COLOUR and TYPE: warm workshop light, Atlas violet #6b4bd1 accent; Roboto/system
+LAYOUT: trail strip on top, bench in the middle, task card at the bottom
+*/
+:root{--ink:#1d1830;--sub:#5d5672;--v:#6b4bd1;--v2:#efe9ff;--ok:#2f9a66;--warn:#d9822b;--glass:rgba(255,255,255,.9);--line:rgba(40,20,90,.12)}
+*{box-sizing:border-box;min-width:0;-webkit-tap-highlight-color:transparent}
+html,body{margin:0;height:100%;overflow:hidden}
+body{font:15px/1.4 Roboto,"Google Sans",system-ui,-apple-system,"Segoe UI",sans-serif;color:var(--ink);user-select:none;-webkit-user-select:none;touch-action:none;background:linear-gradient(#f6efe6,#e9e2f5)}
+canvas#c{position:fixed;inset:0;width:100%;height:100%;display:block}
+button{font:inherit;color:inherit;border:0;background:none;cursor:pointer}
+button:focus-visible{outline:3px solid var(--v);outline-offset:2px}
+.prog{position:fixed;top:0;left:0;height:3px;background:var(--v);z-index:6;transition:width .8s}
+.top{position:fixed;left:0;right:0;top:0;z-index:5;padding:10px 12px 0;background:linear-gradient(rgba(250,246,240,.95),rgba(250,246,240,.75) 75%,rgba(250,246,240,0))}
+.hd{display:flex;align-items:center;gap:8px}
+.hd .back{width:38px;height:38px;border-radius:19px;font-size:21px}
+.hd h1{font-size:18px;margin:0;font-weight:600;line-height:1.15}
+.hd p{margin:0;font-size:12px;color:var(--sub)}
+.trail{position:relative;height:62px;margin:2px 4px 0}
+.trail svg{position:absolute;inset:0;width:100%;height:100%;overflow:visible}
+.stop{position:absolute;top:8px;transform:translateX(-50%);display:flex;flex-direction:column;align-items:center;gap:3px;width:72px}
+.stop i{width:28px;height:28px;border-radius:14px;display:grid;place-items:center;font-style:normal;font-size:12px;font-weight:700;background:#fff;color:#7a7290;border:2px solid #d8d0ea;transition:.25s}
+.stop span{font-size:11px;font-weight:600;color:var(--sub);white-space:nowrap}
+.stop.done i{background:var(--ok);border-color:var(--ok);color:#fff}
+.stop.here i{background:var(--v);border-color:var(--v);color:#fff;box-shadow:0 0 0 0 rgba(107,75,209,.5);animation:pulse 1.6s infinite}
+.stop.on span{color:var(--v)}
+.stop.on i{transform:scale(1.18)}
+@keyframes pulse{to{box-shadow:0 0 0 10px rgba(107,75,209,0)}}
+#labels{position:fixed;inset:0;pointer-events:none;z-index:3}
+.lab{position:absolute;transform:translate(-50%,-50%);background:var(--glass);border-radius:12px;padding:4px 9px;font-size:12.5px;font-weight:700;white-space:nowrap;box-shadow:0 2px 8px rgba(30,10,80,.16);transition:background .2s,color .2s}
+.lab.ok{background:var(--ok);color:#fff}.lab.bad{background:var(--warn);color:#fff}.lab.v{background:var(--v);color:#fff}
+.lab.big{font-size:15px;padding:6px 12px}
+.lab.tap{pointer-events:auto}
+.lab small{font-weight:500;opacity:.85}
+.card{position:fixed;left:10px;right:10px;bottom:10px;z-index:4;background:#fff;border-radius:24px;padding:13px 14px 12px;box-shadow:0 -2px 24px rgba(30,10,80,.16)}
+.kick{font-size:11px;font-weight:700;color:var(--v)}
+.card h2{margin:1px 0 0;font-size:19px}
+.do{display:flex;gap:8px;align-items:flex-start;margin:6px 0 0;font-size:14px}
+.do b{flex:none;width:22px;height:22px;border-radius:11px;background:var(--v2);color:var(--v);display:grid;place-items:center;font-size:12px}
+.result{margin-top:8px;font-size:13.5px;color:var(--sub);display:flex;gap:6px}
+.result:before{content:"✦";color:var(--v)}
+.chips{display:flex;gap:6px;flex-wrap:wrap;margin-top:8px}
+.chip{display:flex;align-items:center;gap:5px;height:30px;padding:0 10px;border-radius:15px;background:#f4f1fa;font-size:12.5px;font-weight:600}
+.chip.ok{background:#e3f4ea;color:#1f6e47}.chip.bad{background:#fdeedd;color:#9a5512}
+.acts{display:flex;gap:8px;margin-top:10px;flex-wrap:wrap}
+.btn{height:44px;padding:0 18px;border-radius:22px;background:var(--v);color:#fff;font-weight:600}
+.btn.ghost{background:var(--v2);color:var(--v)}
+.btn[disabled]{opacity:.4}
+.tray{position:fixed;left:10px;right:10px;z-index:4;display:flex;gap:8px;justify-content:center;flex-wrap:wrap}
+.sw{width:44px;height:44px;border-radius:22px;border:3px solid #fff;box-shadow:0 2px 8px rgba(30,10,80,.22)}
+.sw.on{outline:3px solid var(--v);outline-offset:2px}
+#toast{position:fixed;left:50%;top:118px;transform:translateX(-50%) translateY(-10px);opacity:0;background:#241c3b;color:#fff;border-radius:16px;padding:10px 14px;font-size:13.5px;display:flex;gap:14px;align-items:center;z-index:8;transition:.3s;pointer-events:none;white-space:nowrap;max-width:94vw}
+#toast.show{opacity:1;transform:translateX(-50%);pointer-events:auto}
+#toast button{color:#c9b8ff;font-weight:700}
+#ask{position:fixed;inset:0;z-index:9;background:rgba(20,10,40,.35);display:none;align-items:flex-end}
+#ask.show{display:flex}
+.sheet{background:#fff;width:100%;border-radius:26px 26px 0 0;padding:18px 18px 22px;animation:up .25s ease-out}
+.sheet h3{margin:0 0 4px;font-size:18px}.sheet p{margin:0;color:var(--sub);font-size:14px}
+@keyframes up{from{transform:translateY(40px);opacity:0}}
+#hint{position:fixed;left:50%;transform:translateX(-50%);background:rgba(36,28,59,.85);color:#fff;font-size:13px;padding:8px 14px;border-radius:16px;z-index:5;white-space:nowrap;transition:opacity .4s;pointer-events:none;display:flex;gap:8px;align-items:center}
+#hint .hand{display:inline-block;animation:nudge 1.4s ease-in-out infinite}
+@keyframes nudge{50%{transform:translateX(10px)}}
+#load{position:fixed;inset:0;display:grid;place-items:center;z-index:20;background:#f6efe6;font-weight:600;color:var(--v);transition:opacity .5s}
+@media (prefers-reduced-motion:reduce){.stop.here i,#hint .hand{animation:none}}
+</style>
+<script type="importmap">{"imports":{"three":"./lib/three.module.min.js","three/addons/":"./lib/addons/"}}</script>
+</head>
+<body>
+<canvas id="c"></canvas>
+<div class="prog" id="prog"></div>
+<header class="top">
+  <div class="hd"><button class="back" aria-label="Back">←</button><div><h1>Home Renovation</h1><p id="sub">Trail · hands on</p></div></div>
+  <div class="trail" id="trail"></div>
+</header>
+<div id="labels"></div>
+<div class="tray" id="tray"></div>
+<div id="hint"></div>
+<div class="card" id="card"></div>
+<div id="toast"></div>
+<div id="ask"><div class="sheet" id="asksheet"></div></div>
+<div id="load">Setting up the workshop…</div>
+<script type="module" src="./app.js"></script>
+</body>
+</html>
