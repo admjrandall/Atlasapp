@@ -117,7 +117,7 @@ fun StartScreen(vm: AtlasViewModel, snap: Snapshot, spaceId: String?) {
                                 vm.repo.setJourney(t.copy(spaceId = id), "from template $n"); vm.goInstead(Route.Journey(id))
                             }.padding(horizontal = 14.dp, vertical = 10.dp).testTag("template_$n")) {
                             Text(n, style = T.body.copy(fontSize = 15.sp), color = Atlas.DeepPlum)
-                            Text("${t.shape.label} · ${t.parts.size} ${t.shape.partNoun}s", style = T.meta, color = Atlas.SecondaryText)
+                            Text("${t.shape.label} · ${t.parts.size} ${t.shape.partNouns}", style = T.meta, color = Atlas.SecondaryText)
                         }
                     }
                 }

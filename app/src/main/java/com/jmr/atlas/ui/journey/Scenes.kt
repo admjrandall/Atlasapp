@@ -43,20 +43,21 @@ object Layout {
                 val y = 470f - i * (330f / max(1, n - 1).coerceAtLeast(1)) .coerceAtMost(110f); val left = i % 2 == 0
                 Spot(p, if (left) 92f else 298f, y.coerceAtLeast(150f), if (p.state == PartState.HERE) 36f else 28f, label = LabelAt.BELOW) }
             Shape.REMEMBER -> when (j.style) {
-                "LETTER" -> ps.mapIndexed { i, p -> Spot(p, SW / 2, 120f + i * (380f / max(n, 4)), 330f, 380f / max(n, 4) - 6f, hit = true, label = LabelAt.NONE) }
+                "LETTER" -> ps.mapIndexed { i, p -> Spot(p, SW / 2, 175f + i * (370f / max(n, 4)) + (370f / max(n, 4)) / 2, 330f, 370f / max(n, 4) - 6f, hit = true, label = LabelAt.NONE) }
                 "GARDEN" -> ps.mapIndexed { i, p -> val s = gardenSlots[i % gardenSlots.size]; Spot(p, s.x, s.y + (i / gardenSlots.size) * 18f, 78f, 70f, hit = true, label = LabelAt.ABOVE) }
                 else -> ps.mapIndexed { i, p -> val s = roomSlots[i % roomSlots.size]; Spot(p, s.x, s.y, s.w, s.h, hit = true, label = LabelAt.BELOW) }
             }
             Shape.CROSSROADS -> ps.mapIndexed { i, p -> Spot(p, if (n == 1) SW / 2 else 60f + i * (270f / (n - 1)), 120f, 58f, label = LabelAt.BELOW) }
             Shape.RIVER -> { val pts = riverPoints(n); ps.mapIndexed { i, p -> Spot(p, pts[i].x, pts[i].y, if (p.state == PartState.HERE) 40f else 26f, label = LabelAt.RIGHT) } }
             Shape.ORBIT -> ps.mapIndexed { i, p ->
-                val r = 70f + i * 40f; val a = (-1.1f + i * 0.35f)
-                Spot(p, SW / 2 + r * cos(a), 300f + r * sin(a), if (p.state == PartState.HERE) 30f else 22f, label = LabelAt.RIGHT) }
+                // rings fit inside the screen whatever the count; each marker sits further round so labels don't stack
+                val r = 64f + i * (110f / max(1, n - 1)); val a = (-1.25f + i * (2.3f / max(1, n - 1)))
+                Spot(p, SW / 2 + r * cos(a), 300f + r * sin(a), if (p.state == PartState.HERE) 30f else 22f, label = if (i == 0) LabelAt.ABOVE else LabelAt.RIGHT) }
             Shape.SHELF -> ps.mapIndexed { i, p -> Spot(p, SW / 2, 120f + i * (420f / max(n, 3)), 350f, 420f / max(n, 3) - 10f, hit = true, label = LabelAt.NONE) }
             Shape.VOYAGE -> { val pts = voyagePoints(n); ps.mapIndexed { i, p -> Spot(p, pts[i].x, pts[i].y, if (p.state == PartState.HERE) 50f else 34f, label = LabelAt.BELOW) } }
             Shape.CLIMB -> ps.mapIndexed { i, p ->
                 val t = if (n == 1) 1f else i / (n - 1f)
-                Spot(p, 40f + t * 190f, 540f - t * 300f, if (i == n - 1) 34f else if (p.state == PartState.HERE) 30f else 24f, label = if (i == n - 1) LabelAt.LEFT else LabelAt.LEFT) }
+                Spot(p, 40f + t * 190f, 540f - t * 300f, if (i == n - 1) 34f else if (p.state == PartState.HERE) 30f else 24f, label = if (40f + t * 190f < 120f) LabelAt.RIGHT else LabelAt.LEFT) }
             Shape.COUNTDOWN -> ps.mapIndexed { i, p ->
                 val a = -PI.toFloat() / 2 + i * (2 * PI.toFloat() / n)
                 Spot(p, SW / 2 + 168f * cos(a), 300f + 168f * sin(a), 44f, label = if (sin(a) < -0.5f) LabelAt.ABOVE else LabelAt.BELOW) }
@@ -92,18 +93,37 @@ fun keepsakeFor(name: String): Keepsake {
 }
 
 /** The scene art behind the parts. Pure drawing; taps are handled by the part spots on top. */
+/** Ground bands (design y → colour) that run edge to edge, so the scene fills wide screens (unfolded) too. */
+private fun ground(j: Journey): List<Pair<Float, Color>> = when (j.shape) {
+    Shape.TRAIL -> listOf(245f to Color(0xFFE7F1EA))
+    Shape.TREE -> listOf(582f to Color(0xFFDDEEE4))
+    Shape.REMEMBER -> when (j.style) { "GARDEN" -> listOf(295f to Color(0xFFCFE6D6), 355f to Color(0xFFBFDDC8)); "LETTER" -> emptyList()
+        else -> listOf(0f to Color(0xFFF3E6DA), 432f to Color(0xFFC9A889), 442f to Color(0xFFDDC4A8)) }
+    Shape.VOYAGE -> listOf(140f to Color(0xFFD2E8F2))
+    Shape.CLIMB -> listOf(560f to Color(0xFFDCE4EE))
+    else -> emptyList()
+}
+
 @Composable
-fun SceneArt(j: Journey, spots: List<Spot>, modifier: Modifier = Modifier) {
+fun SceneArt(j: Journey, spots: List<Spot>, modifier: Modifier = Modifier, dx: Float = 0f) {
     val pulse = rememberInfiniteTransition(label = "scene").animateFloat(0f, 1f, infiniteRepeatable(tween(2400), RepeatMode.Restart), label = "flow")
     Canvas(modifier) {
-        val k = size.width / SW
+        val k = (size.width - 2 * dx) / SW
+        ground(j).forEach { (y, c) -> drawRect(c, Offset(0f, y * k), Size(size.width, size.height - y * k)) }
+        translate(left = dx) { drawScene(j, spots, k, pulse.value) }
+    }
+}
+
+private fun DrawScope.drawScene(j: Journey, spots: List<Spot>, k: Float, pv: Float) {
+    run {
+        val size = Size(SW * k, SH * k)
         fun o(x: Float, y: Float) = Offset(x * k, y * k)
         fun path(pts: List<Offset>) = Path().apply {
             if (pts.isEmpty()) return@apply
             moveTo(pts[0].x * k, pts[0].y * k)
             for (i in 1 until pts.size) { val a = pts[i - 1]; val b = pts[i]; val m = (a.y + b.y) / 2; cubicTo(a.x * k, m * k, b.x * k, m * k, b.x * k, b.y * k) }
         }
-        val dash = PathEffect.dashPathEffect(floatArrayOf(6f * k, 8f * k), -pulse.value * 28f * k)
+        val dash = PathEffect.dashPathEffect(floatArrayOf(6f * k, 8f * k), -pv * 28f * k)
         when (j.shape) {
             Shape.TRAIL -> {
                 drawPath(Path().apply { moveTo(0f, 250 * k); cubicTo(120 * k, 220 * k, 250 * k, 270 * k, size.width, 240 * k); lineTo(size.width, size.height); lineTo(0f, size.height); close() }, Color(0xFFE7F1EA))
@@ -165,7 +185,7 @@ fun SceneArt(j: Journey, spots: List<Spot>, modifier: Modifier = Modifier) {
                 drawPath(path(listOf(Offset(200f, 100f)) + pts + Offset(200f, 600f)), Look.blue, style = Stroke(1.8f * k, pathEffect = dash))
             }
             Shape.ORBIT -> {
-                spots.forEachIndexed { i, s -> drawCircle(if (s.part.state == PartState.HERE) Look.acc else Color(0xFFCDBDE6).copy(alpha = 1f - i * 0.15f), (70f + i * 40f) * k, o(SW / 2, 300f), style = Stroke((if (i == 0) 3f else 2f) * k)) }
+                spots.forEachIndexed { i, s -> drawCircle(if (s.part.state == PartState.HERE) Look.acc else Color(0xFFCDBDE6).copy(alpha = (1f - i * 0.12f).coerceAtLeast(0.3f)), (64f + i * (110f / max(1, spots.size - 1))) * k, o(SW / 2, 300f), style = Stroke((if (i == 0) 3f else 2f) * k)) }
             }
             Shape.SHELF -> {
                 drawRoundRect(Color(0xFFEFE3D3), o(20f, 96f), Size(350 * k, 470 * k), CornerRadius(18 * k))

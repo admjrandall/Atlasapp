@@ -55,7 +55,7 @@ fun Lens(vm: AtlasViewModel, snap: Snapshot, crumb: String, b: Bundle, onClose: 
     var showAll by remember(b.key) { mutableStateOf(false) }
     val shown = if (showAll) b.items else b.best
     BackHandler { if (idx != null) idx = null else onClose() }
-    Box(Modifier.fillMaxSize().background(Color(0xF0F3EEFA)).then(BlockTaps).testTag("lens")) {
+    Box(Modifier.fillMaxSize().background(Color(0xFFF3EEFA)).then(BlockTaps).testTag("lens")) {
         AnimatedContent(idx, label = "lens") { i ->
             if (i == null) Strip(snap, crumb, b, shown, showAll, { showAll = true }, onClose) { idx = it }
             else Viewer(vm, snap, b.title, shown, i, onBack = { idx = null }) { idx = it }

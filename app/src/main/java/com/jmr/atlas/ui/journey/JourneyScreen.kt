@@ -73,11 +73,12 @@ fun JourneyScreen(vm: AtlasViewModel, snap: Snapshot, spaceId: String) {
     LaunchedEffect(cover) { vm.journeyCover.value = cover }
     DisposableEffect(Unit) { onDispose { vm.journeyCover.value = false } }
     Box(Modifier.fillMaxSize().background(Look.bg(j.shape, j.style)).testTag("journey")) {
-        BoxWithConstraints(Modifier.fillMaxSize().padding(top = if (j.shape == Shape.REMEMBER) 104.dp else 64.dp)) {
-            val k = maxWidth / SW
-            val h = minOf(maxHeight - 250.dp, k * SH)
-            Box(Modifier.width(maxWidth).height(h)) {
-                SceneArt(j, spots, Modifier.matchParentSize())
+        // the scene fits the space above the part sheet: scaled by width or height, whichever is tighter, and centred
+        BoxWithConstraints(Modifier.fillMaxSize().padding(top = if (j.shape == Shape.REMEMBER) 104.dp else 64.dp, bottom = 236.dp), contentAlignment = Alignment.TopCenter) {
+            val k = minOf(maxWidth / SW, maxHeight / SH)
+            val dx = (maxWidth - k * SW) / 2
+            SceneArt(j, spots, Modifier.width(maxWidth).height(k * SH), with(androidx.compose.ui.platform.LocalDensity.current) { dx.toPx() })
+            Box(Modifier.width(k * SW).height(k * SH)) {
                 if (j.shape == Shape.REMEMBER && j.style == "LETTER") Letter(snap, j, spots, k)
                 if (j.shape == Shape.SHELF) ShelfRows(snap, j, spots, k)
                 if (j.shape == Shape.ORBIT || j.shape == Shape.COUNTDOWN) Center(space, j, k)
@@ -184,7 +185,7 @@ private fun PartNode(s: Snapshot, j: Journey, sp: Spot, i: Int, k: Dp, on: Boole
             val al = when (sp.label) { LabelAt.RIGHT -> Alignment.CenterStart; LabelAt.LEFT -> Alignment.CenterEnd; LabelAt.ABOVE -> Alignment.TopCenter; else -> Alignment.BottomCenter }
             val off = when (sp.label) { LabelAt.RIGHT -> Modifier.offset(x = w + 8.dp); LabelAt.LEFT -> Modifier.offset(x = -(w + 8.dp)); LabelAt.ABOVE -> Modifier.offset(y = -(h / 2 + 22.dp)); else -> Modifier.offset(y = h / 2 + 22.dp) }
             Column(Modifier.align(al).then(off).wrapContentSize(unbounded = true), horizontalAlignment = Alignment.CenterHorizontally) {
-                Text(p.name, style = T.metaStrong.copy(fontSize = 12.sp), color = Atlas.DeepPlum, maxLines = 1)
+                Text(p.name, style = T.metaStrong.copy(fontSize = 12.sp), color = Atlas.DeepPlum, maxLines = 1, modifier = Modifier.background(Look.bg(j.shape, j.style).copy(alpha = 0.75f), RoundedCornerShape(6.dp)).padding(horizontal = 4.dp))
                 stateNote(j, p, i)?.let { Text(it, style = T.meta.copy(fontSize = 11.sp), color = Atlas.SecondaryText, maxLines = 1) }
             }
         }
@@ -225,13 +226,15 @@ private fun Center(space: KObject, j: Journey, k: Dp) {
 private fun Letter(s: Snapshot, j: Journey, spots: List<Spot>, k: Dp) {
     val space = s.objects[j.spaceId]
     Column(Modifier.offset(k * 18f + 24.dp, k * 96f + 18.dp).width(k * 354f - 48.dp)) {
-        Text("Dear ${space?.title?.removePrefix("Remembering ")?.substringBefore(' ') ?: ""},", style = T.band.copy(fontSize = 26.sp, fontWeight = FontWeight.Bold), color = Color(0xFF3B2E2A))
+        Text("Dear ${space?.title?.removePrefix("Remembering ")?.substringBefore(' ')?.trim(',', '.', ';', ':') ?: ""},", style = T.band.copy(fontSize = 26.sp, fontWeight = FontWeight.Bold), color = Color(0xFF3B2E2A))
     }
+    if (spots.isEmpty()) Text("Add a memory with the box below and I’ll write the first chapter from it.", style = T.meta.copy(fontSize = 14.sp), color = Color(0xFF6E5F57),
+        modifier = Modifier.offset(k * 18f + 24.dp, k * 96f + 64.dp).width(k * 354f - 48.dp))
     spots.forEachIndexed { i, sp ->
         val items = JourneyItems.inPart(s, j, sp.part.id)
         val line = items.firstOrNull { it.type == ObjType.NOTE }?.body?.take(110) ?: items.firstOrNull()?.title ?: "Add a memory to write this chapter."
         val photo = items.firstOrNull { it.type == ObjType.IMAGE }
-        Row(Modifier.offset(k * 18f + 24.dp, k * (sp.y - sp.h / 2) + 34.dp).width(k * 354f - 48.dp)) {
+        Row(Modifier.offset(k * 18f + 24.dp, k * (sp.y - sp.h / 2) + 6.dp).width(k * 354f - 48.dp)) {
             Text(buildRoman(i + 1) + ". ", style = T.tileQuote, color = Atlas.Primary)
             Column(Modifier.weight(1f)) {
                 Text(sp.part.name, style = T.tileQuote, color = Color(0xFF3B2E2A))
@@ -277,8 +280,8 @@ private fun Tributaries(s: Snapshot, j: Journey, k: Dp, onLens: (Bundle) -> Unit
 @Composable
 private fun PartSheet(vm: AtlasViewModel, s: Snapshot, j: Journey, sel: String?, acc: Color, onLens: (Bundle) -> Unit, onFinish: () -> Unit, onToast: (Pair<String, (() -> Unit)?>) -> Unit) {
     val p = j.parts.firstOrNull { it.id == sel }
-    Column(Modifier.fillMaxWidth().shadow(10.dp, RoundedCornerShape(24.dp)).clip(RoundedCornerShape(24.dp)).background(Color.White.copy(alpha = 0.97f)).padding(horizontal = 16.dp, vertical = 14.dp)
-        .animateContentSize().testTag("part_sheet")) {
+    Column(Modifier.fillMaxWidth().heightIn(max = 230.dp).shadow(10.dp, RoundedCornerShape(24.dp)).clip(RoundedCornerShape(24.dp)).background(Color.White.copy(alpha = 0.97f))
+        .verticalScroll(rememberScrollState()).padding(horizontal = 16.dp, vertical = 14.dp).animateContentSize().testTag("part_sheet")) {
         if (sel == GATE) {
             val left = j.parts.filter { it.state != PartState.OUT }
             Text("THE GATE", style = T.tileLabel, color = Atlas.SecondaryText)

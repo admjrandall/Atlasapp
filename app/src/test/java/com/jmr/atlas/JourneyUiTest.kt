@@ -117,4 +117,21 @@ class JourneyUiTest {
         var st: ProjectStatus? = null; rule.vm { st = it.repo.snap.objects[pid]!!.projectStatus }
         assertEquals(ProjectStatus.COMPLETED, st)
     }
+
+    @Test @Config(sdk = [36], qualifiers = "w369dp-h905dp-xxhdpi") fun everyShapeRendersOnTheCover() = everyShape("cover")
+    @Test @Config(sdk = [36], qualifiers = "w707dp-h823dp-port-xhdpi") fun everyShapeRendersUnfolded() = everyShape("inner")
+
+    @Test fun everyShapeRenders() = everyShape("small")
+
+    private fun everyShape(tag: String) {
+        rule.example()
+        val pid = rule.idOf("Home Renovation")
+        rule.vm { it.go(Route.Journey(pid)) }
+        for (sh in Shape.entries) for (st in sh.styles.ifEmpty { listOf("") }) {
+            rule.vm { val j = Journeys.of(it.repo.snap, pid)!!; it.repo.setJourney(Journeys.reshape(j, sh, st)) }
+            rule.onNodeWithTag("journey").assertIsDisplayed()
+            rule.onAllNodesWithTag("part_0").onFirst().assertExists()
+            rule.shot("js_${tag}_${sh.name.lowercase()}${if (st.isNotEmpty()) "_" + st.lowercase() else ""}")
+        }
+    }
 }

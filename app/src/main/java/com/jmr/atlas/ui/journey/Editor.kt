@@ -44,7 +44,7 @@ fun Editor(vm: AtlasViewModel, snap: Snapshot, space: KObject, j: Journey, acc: 
                 .clickable(role = Role.Button) { onDone() }.padding(horizontal = 18.dp, vertical = 12.dp).testTag("editor_done"))
         }
         Column(Modifier.weight(1f).verticalScroll(rememberScrollState())) {
-        Label("${j.shape.partNoun.replaceFirstChar { it.uppercase() }}s · move with the arrows, tap a name to rename")
+        Label("${j.shape.partNouns.replaceFirstChar { it.uppercase() }} · move with the arrows, tap a name to rename")
         Column(Modifier.padding(horizontal = 16.dp, vertical = 8.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
             j.parts.forEachIndexed { i, p ->
                 var name by remember(p.id) { mutableStateOf(p.name) }
@@ -92,7 +92,7 @@ fun Editor(vm: AtlasViewModel, snap: Snapshot, space: KObject, j: Journey, acc: 
         }
         Label("More")
         Column(Modifier.padding(horizontal = 16.dp, vertical = 8.dp).padding(bottom = 40.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            Row_("Save as a template", "keeps the ${j.shape.partNoun}s, not your items", "save_template") { vm.repo.saveTemplate(space.title, j); onToast("Saved “${space.title}” as a template" to null) }
+            Row_("Save as a template", "keeps the ${j.shape.partNouns}, not your items", "save_template") { vm.repo.saveTemplate(space.title, j); onToast("Saved “${space.title}” as a template" to null) }
             val locked = space.id in vm.settings.lockedJourneys
             Row_(if (locked) "Unlock with fingerprint" else "Lock with fingerprint", if (locked) "on for this journey" else "off", "toggle_lock") {
                 vm.settings.lockedJourneys = if (locked) vm.settings.lockedJourneys - space.id else vm.settings.lockedJourneys + space.id }
@@ -139,7 +139,7 @@ fun Finish(vm: AtlasViewModel, snap: Snapshot, space: KObject, j: Journey, acc: 
         Shape.COUNTDOWN -> listOf("The day", "${space.title}, celebrated", "Everything here turns into an album you can come back to.", "Keep it as an album")
         Shape.VOYAGE -> listOf("Trip complete", space.title, "$n things from the trip. The islands fold into an album, the best photos first.", "Keep it as an album")
         Shape.CLIMB -> listOf("Summit", "${space.title}, done", "${j.parts.size} camps got you here. The climb becomes a memory.", "Keep it as a memory")
-        else -> listOf("Journey complete", "${space.title} is done", "${j.parts.size} ${j.shape.partNoun}s and $n things. It folds into a memory you can come back to.", "Keep it as a memory")
+        else -> listOf("Journey complete", "${space.title} is done", "${j.parts.size} ${j.shape.partNouns} and $n things. It folds into a memory you can come back to.", "Keep it as a memory")
     }
     Column(Modifier.fillMaxSize().background(Color(0xFFFAF8FC)).statusBarsPadding().padding(horizontal = 24.dp).padding(top = 40.dp).then(BlockTaps).testTag("journey_finish"),
         horizontalAlignment = Alignment.CenterHorizontally) {

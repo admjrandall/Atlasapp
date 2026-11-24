@@ -17,6 +17,8 @@ enum class Shape(val label: String, val time: String, val partNoun: String, val 
     CLIMB("Climb", "Toward a target", "camp", true),
     COUNTDOWN("Countdown", "To a fixed day", "lane", true);
 
+    val partNouns: String get() = when (partNoun) { "branch" -> "branches"; "memory" -> "memories"; "shelf" -> "shelves"; else -> partNoun + "s" }
+
     /** The parts a new journey of this shape starts with (renamable, reorderable). */
     val starter: List<String> get() = when (this) {
         TRAIL -> listOf("Research", "Plan", "Do it", "Finish")
