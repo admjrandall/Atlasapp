@@ -18,7 +18,7 @@ shape, lays the space's items along it, and keeps it organized as things arrive.
 
 | Topic | Decision |
 |---|---|
-| Shapes | Ten in the first set (below) |
+| Shapes | Ten in the first set (below); Remember has three styles |
 | Choosing a shape | AI picks; the other shapes are one tap away; you can switch later |
 | Spaces | Kept. Any space can become a journey. Plain spaces get a visual upgrade (section 7) |
 | Mockup review | All journeys at once, fully clickable start to finish |
@@ -31,7 +31,7 @@ shape, lays the space's items along it, and keeps it organized as things arrive.
 |---|---|---|---|---|
 | 1 | **Trail** | Has an end | Projects: renovation, move, job search | Thin bar + "you are here" stop |
 | 2 | **Living Tree** | Ongoing, grows | A person or life: grandchild, child, pet, marriage | None; branches and fruit |
-| 3 | **Two Lines** | Looks back | Remembering someone who died | None; braided lives, his line ends |
+| 3 | **Remember** (3 styles, see 3a) | Looks back | Remembering someone who died | None; anniversaries return |
 | 4 | **Crossroads** | Converges | Decisions: a purchase, a job offer, a contractor | Options narrowing to one gate |
 | 5 | **River** | Deepens | Learning: a skill, hobby, course | Depth meter (Curious → Could teach it) |
 | 6 | **Orbit** | Returns | Recurring: taxes, car registration, physicals | Rings per cycle; days to next due |
@@ -39,6 +39,19 @@ shape, lays the space's items along it, and keeps it organized as things arrive.
 | 8 | **Voyage** | Before · during · after | A trip | Islands per place/day; becomes an album |
 | 9 | **Climb** | Toward a target | A measured goal: savings, fitness, recovery | Altitude toward a summit with camps |
 | 10 | **Countdown** | To a fixed day | An event: wedding, party, a service | A ring tightening to the day; run of show |
+
+### 3a. Remember — three styles of one shape
+Replaces the v1 "Two Lines" concept (judged not personal enough). The AI picks a style; the other two
+are one tap away, and all three show the same memories.
+
+| Style | What you see | Grows by | Notes |
+|---|---|---|---|
+| **Keepsake Room** (default) | A warm room that is *his*: objects chosen from your memories — fishing rod on the wall (Lake Powell), guitar in the corner (garage band), framed photo (wedding toast), his phone on the table (last texts), the obituary as a folded card by the door | A new memory adds a new object | Light follows the time of day; softly lit on his birthday and the anniversary. Needs an illustrated object library (~40 objects) the AI chooses from |
+| **Memory Garden** | A garden you tend: photos are flowers, stories are trees, people who share memories plant their own | Planting | Blooms on anniversaries; gentle and hopeful |
+| **Living Letter** | A letter to him that writes itself in chapters, photos tucked in like a scrapbook, your words between | Writing | Most intimate and readable; least visual |
+
+Tap any object / plant / chapter → its bundle (Lens) → items. Entry wording is gentle ("Would you like
+to keep this somewhere?"); sources are your phone plus the obituary you asked for, nothing else.
 
 Candidates held back: **Thread** (a case with an organization: insurance claim, warranty, dispute —
 calls and emails, waiting on them). Can replace any of the ten.
@@ -68,7 +81,7 @@ The pick is shown with a one-line reason ("It has a date: Sat Nov 29") and the a
 10. **Lots of data** — semantic zoom; ~12 things on screen max; AI piles (renamable); best few lead;
     raw view + search always reachable.
 11. **Finishing / cycling** — Trail done → becomes a memory; Crossroads → verdict; Orbit → next ring;
-    Countdown → the day, then an album; Climb → summit; Voyage → album; Tree/Lines/Shelf/River never finish.
+    Countdown → the day, then an album; Climb → summit; Voyage → album; Tree/Remember/Shelf/River never finish.
 12. **Templates** — save any journey's skeleton (parts, not items) as a template; templates learn from
     your edits (e.g. you always add "Permits").
 13. **On Home** — each journey appears in its own mini shape with one status line.
@@ -81,7 +94,7 @@ The pick is shown with a one-line reason ("It has a date: Sat Nov 29") and the a
 |---|---|---|
 | Trail | Stops (done / here / next / later); roadside items | What's needed to leave this stop; items found here |
 | Living Tree | Branches (finite mini-journeys) and fruit (finished moments); buds (ideas) | A branch's own mini trail |
-| Two Lines | Chapters along the braid; people who appear | Bundles per chapter; "add a memory only you have" |
+| Remember | Objects (Room) / plants (Garden) / chapters (Letter); people who appear | Bundles per memory; "add a memory only you have" |
 | Crossroads | Options (streams) and the gate | Loved / complaints / sources; rule out, bring back, choose |
 | River | Sources (tributaries) and attempts (stones) | What you learned from it; next attempt |
 | Orbit | Cycles (rings) and recurring items | Last time vs this time; what to watch for |
@@ -118,4 +131,4 @@ Directions to mock up:
 ## 9. Open questions
 - Exact list of ten (Thread vs. another)?
 - Which sources each shape may pull from by default (e.g. Messages for Two Lines)?
-- Lock/biometric default for Two Lines journeys?
+- Lock/biometric default for Remember journeys?
