@@ -130,5 +130,5 @@ Directions to mock up:
 
 ## 9. Open questions
 - Exact list of ten (Thread vs. another)?
-- Which sources each shape may pull from by default (e.g. Messages for Two Lines)?
+- Which sources each shape may pull from by default (e.g. Messages for Remember)?
 - Lock/biometric default for Remember journeys?
