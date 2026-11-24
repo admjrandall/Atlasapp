@@ -324,7 +324,7 @@ class InputUiTest {
         rule.onAllNodesWithTag("focus").assertCountEquals(0)
         rule.onAllNodesWithTag("band").onFirst().assertExists()
         rule.vm { it.select(jamie) }
-        rule.tap("view_Focus")
+        rule.onNodeWithTag("view_Focus").performScrollTo().performClick(); rule.settle()
         var fs = emptySet<String>(); rule.vm { fs = it.settings.focusSpaces }; assertTrue(pid in fs)
         rule.onAllNodesWithTag("band_why").onFirst().assertExists()
         val snap = rule.repo().snap
@@ -335,8 +335,8 @@ class InputUiTest {
         rule.vm { it.select(jamie) }
         rule.onNodeWithTag("focus").assertIsDisplayed()
         rule.shot("n10_focus_option")
-        rule.tap("focus_back")
-        rule.tap("view_Board")
+        rule.onNodeWithTag("focus_back").performScrollTo().performClick(); rule.settle()
+        rule.onNodeWithTag("view_Board").performScrollTo().performClick(); rule.settle()
         rule.vm { fs = it.settings.focusSpaces }; assertTrue(pid !in fs)
         rule.onAllNodesWithTag("band_why").assertCountEquals(0)
     }
