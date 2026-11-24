@@ -311,6 +311,29 @@ class InputUiTest {
         rule.shot("n09_cover_lines")
     }
 
+    /** 0.8 Focus: bands say why they're together; holding a card lists what it's linked to, by how, and folds the rest. */
+    @Test
+    fun focusListsLinksByHow() {
+        rule.example()
+        val pid = rule.idOf("Home Renovation")
+        rule.vm { it.go(com.jmr.atlas.ui.Route.Space("p:$pid")) }
+        rule.onAllNodesWithTag("band_why").onFirst().assertIsDisplayed()
+        val jamie = rule.idOf("Jamie Carter")
+        val snap = rule.repo().snap
+        val onBoard = com.jmr.atlas.data.Board.bands(snap, pid, LocalDate.now()).flatMap { b -> b.items + listOfNotNull(b.anchor) }.map { it.id }.toSet()
+        val f = com.jmr.atlas.data.Board.focus(snap, jamie, onBoard)
+        assertTrue("Jamie is linked to things on the board", f.lanes.isNotEmpty())
+        assertTrue(f.lanes.all { it.label.isNotBlank() && it.items.isNotEmpty() })
+        assertEquals(onBoard.size - 1 - f.lanes.flatMap { l -> l.items.map { it.id } }.toSet().size, f.folded)
+        rule.vm { it.select(jamie) }
+        rule.onNodeWithTag("focus").assertIsDisplayed()
+        rule.onAllNodesWithTag("focus_lane").onFirst().assertExists()
+        rule.onAllNodesWithTag("band").assertCountEquals(0)
+        rule.shot("n10_focus_jamie")
+        rule.onNodeWithTag("focus_back").performClick(); rule.settle()
+        rule.onAllNodesWithTag("band").onFirst().assertIsDisplayed()
+    }
+
     @Test @Config(sdk = [36], qualifiers = "w707dp-h823dp-port-xhdpi")
     fun readsWhereThingsGo() {
         rule.example()

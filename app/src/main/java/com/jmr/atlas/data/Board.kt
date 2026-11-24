@@ -79,6 +79,42 @@ object Board {
         else -> "Group"
     }
 
+    /** One line under a band's name saying why these things are together (0.8 Focus). Empty when the name already says it. */
+    fun why(b: Band): String = when {
+        b.anchor != null -> "Linked to ${b.anchor.firstName}, directly or one step away"
+        b.key == REST -> "Not linked to anyone in this space yet"
+        b.key == PEOPLE_BAND -> "In this space, with nothing of their own here yet"
+        b.key == "loose" -> "Not filed in any space"
+        else -> ""
+    }
+
+    /** A lane in the focus view: everything linked to the focused item in one way, labelled from the item's side. */
+    data class Lane(val label: String, val items: List<KObject>, val evidence: String?)
+    data class Focus(val lanes: List<Lane>, val folded: Int)
+
+    private val laneOrder = listOf(RelType.ASSIGNED_TO, RelType.DEPENDS_ON, RelType.FOLLOW_UP_TO, RelType.DERIVED_FROM, RelType.REFERENCES,
+        RelType.DISCUSSED_WITH, RelType.SUPPORTS, RelType.PART_OF, RelType.BELONGS_TO, RelType.DUPLICATE_OF, RelType.RELATED_TO)
+
+    /**
+     * Focus (0.8): what [id] is connected to on this board, grouped by how — "Assigned to", "Blocks", "Source of"… —
+     * with confirmed links only. Items on the board that aren't connected are counted in [Focus.folded], not shown.
+     */
+    fun focus(s: Snapshot, id: String, onBoard: Set<String>): Focus {
+        val ns = s.neighbours(id, includeProposed = false).filter { (o, _) -> o.id in onBoard && o.id != id && !o.trashed }
+        val lanes = ns.groupBy { (_, r) -> r.type to (r.sourceId == id) }
+            .map { (k, ps) ->
+                val (type, outgoing) = k
+                Triple(type, outgoing, Lane(if (outgoing) type.label else type.inverse, ps.map { it.first }.distinctBy { it.id }.sortedBy { it.title.lowercase() },
+                    ps.map { it.second.evidence }.firstOrNull { it.isNotBlank() }))
+            }
+            .sortedWith(compareBy({ laneOrder.indexOf(it.first).let { i -> if (i < 0) laneOrder.size else i } }, { !it.second }))
+            .map { it.third }
+            // two directions of the same symmetric type ("Related to") read as one lane
+            .groupBy { it.label }.map { (label, ls) -> Lane(label, ls.flatMap { it.items }.distinctBy { it.id }, ls.firstNotNullOfOrNull { it.evidence }) }
+        val connected = lanes.flatMap { l -> l.items.map { it.id } }.toSet()
+        return Focus(lanes, (onBoard - id - connected).size)
+    }
+
     const val REST = "rest"
     const val PEOPLE_BAND = "people"
 

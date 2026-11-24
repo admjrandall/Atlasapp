@@ -2,6 +2,13 @@
 
 Honest status. "Verified" = automated test or inspected screenshot (Robolectric). Nothing has run on a physical Fold 6 yet; items marked **device-only** can only be proven there.
 
+## 0.8.0 — spaces: groups say why, hold a card to focus
+
+| Asked | Done | Test |
+|---|---|---|
+| Lines and groupings inside a space look cluttered and don't show how things really interact (approved mockup S-Focus, Nov 23 2026) | Each band on a project board now has a one-line reason under its name ("Linked to Priya, directly or one step away", "Not linked to anyone in this space yet"). Holding a card no longer draws lines across the board: it moves to the top and everything linked to it is listed in lanes labelled by how ("Assigned to", "Blocks", "Source of"…), with the link's evidence quoted when there is one; unconnected items fold into one line. "← All groups" or Back returns. Hold another card to refocus. Special spaces (People, Files, Tasks…) are unchanged | `focusListsLinksByHow` (Board.focus lanes + folded count, UI) |
+| An APK on every push | GitHub Actions workflow: Robolectric tests, then `assembleDebug`; the APK is attached to each run | CI |
+
 ## 0.7.1 — files, cards that look like what they are, the box on the Fold
 
 | Reported | Cause / decision | Fix | Test |

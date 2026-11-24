@@ -31,6 +31,11 @@ jobs:
 
       - uses: gradle/actions/setup-gradle@v6
 
+      # Maven Central sometimes answers 429 (rate limited) on a cold cache; resolve dependencies with one retry first,
+      # so a real test failure is never retried.
+      - name: Resolve dependencies
+        run: ./gradlew :app:dependencies --configuration debugUnitTestRuntimeClasspath > /dev/null || (sleep 60 && ./gradlew :app:dependencies --configuration debugUnitTestRuntimeClasspath > /dev/null)
+
       - name: Unit and UI tests (Robolectric)
         run: ./gradlew --stacktrace testDebugUnitTest
 
