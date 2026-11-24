@@ -228,9 +228,12 @@ private fun SpacesPanel(vm: AtlasViewModel, snap: Snapshot, today: LocalDate) {
     Row(verticalAlignment = Alignment.CenterVertically) {
         Eyebrow("Pinned", Modifier.weight(1f))
         if (pinned.any { it.second }) Text("busiest first", style = T.meta.copy(fontSize = 12.sp), color = Atlas.Hint)
+        Text("+ New space", style = T.metaStrong.copy(fontSize = 13.sp), color = Atlas.Primary,
+            modifier = Modifier.heightIn(min = 44.dp).clip(RoundedCornerShape(22.dp)).background(Atlas.Chip).clickable(role = Role.Button) { vm.openCatch("New space ") }
+                .padding(horizontal = 14.dp).wrapContentHeight(Alignment.CenterVertically).testTag("home_new_space"))
     }
     Spacer(Modifier.height(10.dp))
-    if (pinned.isEmpty()) Text("Spaces you’re busy in show here. Type “New space Garden” below to make one.", style = T.meta, color = Atlas.SecondaryText)
+    if (pinned.isEmpty()) Text("Spaces you’re busy in show here. Tap + New space to make one.", style = T.meta, color = Atlas.SecondaryText)
     pinned.chunked(2).forEach { row ->
         Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
             row.forEach { (p, _) -> SpaceTile(vm, snap, p, today, Modifier.weight(1f)) }
@@ -279,6 +282,9 @@ private fun SpaceChips(vm: AtlasViewModel, snap: Snapshot, today: LocalDate) {
         Eyebrow("Spaces", Modifier.weight(1f))
         Text("All ${Board.allSpaces(snap).size}", style = T.metaStrong.copy(fontSize = 13.sp), color = Atlas.Primary,
             modifier = Modifier.clip(RoundedCornerShape(10.dp)).clickable(role = Role.Button) { vm.go(Route.Space(Board.SPACES_KEY)) }.padding(horizontal = 8.dp, vertical = 6.dp).testTag("all_spaces"))
+        Text("+ New space", style = T.metaStrong.copy(fontSize = 13.sp), color = Atlas.Primary,
+            modifier = Modifier.heightIn(min = 44.dp).clip(RoundedCornerShape(22.dp)).background(Atlas.Chip).clickable(role = Role.Button) { vm.openCatch("New space ") }
+                .padding(horizontal = 14.dp).wrapContentHeight(Alignment.CenterVertically).testTag("home_new_space"))
     }
     Spacer(Modifier.height(8.dp))
     FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -291,6 +297,6 @@ private fun SpaceChips(vm: AtlasViewModel, snap: Snapshot, today: LocalDate) {
                 if (late) { Spacer(Modifier.width(6.dp)); Box(Modifier.size(8.dp).clip(CircleShape).background(Atlas.Coral)) }
             }
         }
-        if (pinned.isEmpty()) Text("Type “New space Garden” below to make one.", style = T.meta, color = Atlas.SecondaryText)
+        if (pinned.isEmpty()) Text("Tap + New space to make one.", style = T.meta, color = Atlas.SecondaryText)
     }
 }

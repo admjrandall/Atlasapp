@@ -2,12 +2,14 @@
 
 Honest status. "Verified" = automated test or inspected screenshot (Robolectric). Nothing has run on a physical Fold 6 yet; items marked **device-only** can only be proven there.
 
-## 0.8.0 — spaces: groups say why, hold a card to focus
+## 0.7.2 — load the example later, and a visible "+ New space"
 
 | Asked | Done | Test |
 |---|---|---|
-| Lines and groupings inside a space look cluttered and don't show how things really interact (approved mockup S-Focus, Nov 23 2026) | Each band on a project board now has a one-line reason under its name ("Linked to Priya, directly or one step away", "Not linked to anyone in this space yet"). Holding a card no longer draws lines across the board: it moves to the top and everything linked to it is listed in lanes labelled by how ("Assigned to", "Blocks", "Source of"…), with the link's evidence quoted when there is one; unconnected items fold into one line. "← All groups" or Back returns. Hold another card to refocus. Special spaces (People, Files, Tasks…) are unchanged | `focusListsLinksByHow` (Board.focus lanes + folded count, UI) |
-| An APK on every push | GitHub Actions workflow: Robolectric tests, then `assembleDebug`; the APK is attached to each run | CI |
+| No seed data after starting empty | Settings → Your data → **Load example workspace** (shown while none is loaded; Remove stays where it was) | `emptyStartCanLoadExampleAndMakeSpace` |
+| No obvious way to add a space | **+ New space** on Home (inner and cover screens) opens the box with "New space " ready | same |
+| Test builds wouldn't update each other | Debug builds are signed with one committed debug key, so each CI APK installs over the last | CI |
+| Roll back 0.8.0 | The 0.8.0 space Focus view and band reasons are removed; boards are back to 0.7.1 behaviour | existing board tests |
 
 ## 0.7.1 — files, cards that look like what they are, the box on the Fold
 

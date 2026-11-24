@@ -142,6 +142,12 @@ class AtlasViewModel(app: Application, private val saved: SavedStateHandle) : An
     }
     fun projectSpace(id: String) = go(Route.Space("p:$id"))
 
+    /** Settings: load the sample workspace after setup (0.7.2). Only offered while none is loaded. */
+    fun loadExample() {
+        if (repo.snap.objects.values.any { it.origin == Origin.EXAMPLE }) return
+        ExampleWorkspace.seed(repo); home(); say("Example workspace loaded. Remove it any time in Settings.")
+    }
+
     fun finishOnboarding(example: Boolean) {
         if (example) ExampleWorkspace.seed(repo)
         repo.onboarded = true; _onboarded.value = true

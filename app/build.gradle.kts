@@ -19,12 +19,18 @@ android {
         applicationId = "com.jmr.atlas"
         minSdk = 26
         targetSdk = 37
-        versionCode = 10
-        versionName = "0.8.0"
+        versionCode = 11
+        versionName = "0.7.2"
         ndk { abiFilters += listOf("arm64-v8a") }
     }
 
     signingConfigs {
+        // One shared debug key, committed on purpose (debug keys are not secret), so every CI test build
+        // installs over the last one. Release signing stays owner-only via keystore.properties.
+        getByName("debug") {
+            storeFile = rootProject.file("debug.keystore")
+            storePassword = "android"; keyAlias = "androiddebugkey"; keyPassword = "android"
+        }
         if (keystoreProps.getProperty("storeFile") != null) create("release") {
             storeFile = rootProject.file(keystoreProps.getProperty("storeFile"))
             storePassword = keystoreProps.getProperty("storePassword")

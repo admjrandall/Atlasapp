@@ -125,13 +125,11 @@ fun SpaceScreen(vm: AtlasViewModel, snap: Snapshot, key: String) {
             Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(horizontal = pad).padding(top = 12.dp, bottom = 150.dp)) {
                 if (project != null && bands.isNotEmpty()) {
                     val anyAi = bands.any { it.nameOrigin == Origin.AI }
-                    AtlasDid(when { selected != null -> "Focus · everything linked to it, and how"
-                        anyAi && wide -> "Grouped and named by Atlas · tap a name to change it · hold a card to focus"; anyAi -> "Named by Atlas · hold a card to focus on it"
+                    AtlasDid(when { anyAi && wide -> "Grouped and named by Atlas · tap a name to change it"; anyAi -> "Named by Atlas · tap a name to change it"
                         wide -> "Grouped by who and what they’re about · most urgent first"; else -> "Grouped by who and what · most urgent first" }, Modifier.padding(start = 4.dp, bottom = 10.dp))
                 }
                 if (bands.isEmpty()) Empty(project != null)
-                if (project != null && selected != null) FocusView(vm, snap, selected, onBoard, today, wide)
-                else Box(Modifier.fillMaxWidth().onGloballyPositioned { origin = it.positionInRoot() }) {
+                Box(Modifier.fillMaxWidth().onGloballyPositioned { origin = it.positionInRoot() }) {
                     Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
                         bands.forEach { b ->
                             BandView(vm, b, project, wide, today, selected, related, ringed, expanded[b.key] == true, { expanded[b.key] = !(expanded[b.key] ?: false) }) { id, c ->
@@ -146,49 +144,6 @@ fun SpaceScreen(vm: AtlasViewModel, snap: Snapshot, key: String) {
     }
     }
     // the dark caption bar replaces the input box while something is selected (Root draws it)
-}
-
-/**
- * Focus (0.8): instead of lines across the whole board, the held card moves to the top and everything linked to it is
- * listed in labelled lanes ("Assigned to", "Blocks"…); the rest of the space folds into one line. Hold another card to
- * refocus; "All groups" (or Back) returns to the bands.
- */
-@Composable
-private fun FocusView(vm: AtlasViewModel, snap: Snapshot, selected: String, onBoard: Set<String>, today: LocalDate, wide: Boolean) {
-    val o = snap.objects[selected] ?: return
-    val f = remember(snap, selected, onBoard) { Board.focus(snap, selected, onBoard) }
-    val cols = if (wide) 3 else 2
-    val tileH = if (wide) 104.dp else 116.dp
-    Column(Modifier.fillMaxWidth().testTag("focus"), verticalArrangement = Arrangement.spacedBy(14.dp)) {
-        Box(Modifier.heightIn(min = 40.dp).clip(RoundedCornerShape(20.dp)).background(Atlas.Chip).clickable(role = Role.Button, onClickLabel = "Back to all groups") { vm.select(selected) }
-            .padding(horizontal = 16.dp).testTag("focus_back"), contentAlignment = Alignment.Center) {
-            Text("← All groups", style = T.metaStrong.copy(fontSize = 14.sp), color = Atlas.DeepPlum)
-        }
-        Tile(vm, o, today, TileState.Selected, Modifier.fillMaxWidth().height(tileH))
-        if (f.lanes.isEmpty()) Text("Nothing else in this space is linked to it yet.", style = T.body, color = Atlas.SecondaryText, modifier = Modifier.testTag("focus_empty"))
-        f.lanes.forEach { lane ->
-            Row(Modifier.fillMaxWidth().testTag("focus_lane")) {
-                Box(Modifier.padding(top = 5.dp).size(10.dp).clip(CircleShape).background(Atlas.Primary))
-                Spacer(Modifier.width(10.dp))
-                Column(Modifier.weight(1f)) {
-                    Text(lane.label, style = T.metaStrong.copy(fontSize = 14.sp), color = Atlas.Primary)
-                    lane.evidence?.let { Text("“${it.take(120)}”", style = T.meta, color = Atlas.SecondaryText, maxLines = 2, overflow = TextOverflow.Ellipsis) }
-                    Spacer(Modifier.height(8.dp))
-                    Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                        lane.items.chunked(cols).forEach { row ->
-                            Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                                row.forEach { Tile(vm, it, today, TileState.Normal, Modifier.weight(1f).height(tileH)) }
-                                repeat(cols - row.size) { Spacer(Modifier.weight(1f)) }
-                            }
-                        }
-                    }
-                }
-            }
-        }
-        if (f.folded > 0) Text(if (f.folded == 1) "1 other thing in this space isn’t connected to it. It’s folded away." else "${f.folded} other things in this space aren’t connected to it. They’re folded away.",
-            style = T.meta.copy(fontSize = 14.sp), color = Atlas.SecondaryText,
-            modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(16.dp)).background(Atlas.Chip).padding(horizontal = 14.dp, vertical = 10.dp).testTag("focus_folded"))
-    }
 }
 
 @Composable
@@ -288,9 +243,6 @@ private fun BandView(
         // unfolded: name and status on one line; cover screen: status under the name, so neither is cut off
         if (wide) Row(Modifier.fillMaxWidth().padding(start = 4.dp, end = 4.dp, bottom = 10.dp, top = 2.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) { header(); status() }
         else Column(Modifier.fillMaxWidth().padding(start = 4.dp, end = 4.dp, bottom = 10.dp, top = 2.dp)) { header(); status() }
-        val why = if (project != null) Board.why(b) else ""
-        if (why.isNotBlank()) Text(why, style = T.meta, color = Atlas.SecondaryText, maxLines = 2, overflow = TextOverflow.Ellipsis,
-            modifier = Modifier.padding(start = 4.dp, end = 4.dp, bottom = 10.dp).offset(y = (-4).dp).testTag("band_why"))
         val cap = if (wide) 8 else 6
         val items = if (expanded || b.items.size <= cap + 1) b.items else b.items.take(cap)
         val more = b.items.size - items.size
