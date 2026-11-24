@@ -311,6 +311,36 @@ class InputUiTest {
         rule.shot("n09_cover_lines")
     }
 
+    /** 0.7.3: Board stays the default; Focus is an option per space and is remembered. */
+    @Test
+    fun focusIsAnOptionBoardStaysDefault() {
+        rule.example()
+        val pid = rule.idOf("Home Renovation")
+        rule.vm { it.go(com.jmr.atlas.ui.Route.Space("p:$pid")) }
+        rule.onNodeWithTag("view_switch").assertIsDisplayed()
+        rule.onAllNodesWithTag("band_why").assertCountEquals(0)
+        val jamie = rule.idOf("Jamie Carter")
+        rule.vm { it.select(jamie) }
+        rule.onAllNodesWithTag("focus").assertCountEquals(0)
+        rule.onAllNodesWithTag("band").onFirst().assertExists()
+        rule.vm { it.select(jamie) }
+        rule.tap("view_Focus")
+        var fs = emptySet<String>(); rule.vm { fs = it.settings.focusSpaces }; assertTrue(pid in fs)
+        rule.onAllNodesWithTag("band_why").onFirst().assertExists()
+        val snap = rule.repo().snap
+        val onBoard = com.jmr.atlas.data.Board.bands(snap, pid, LocalDate.now()).flatMap { b -> b.items + listOfNotNull(b.anchor) }.map { it.id }.toSet()
+        val f = com.jmr.atlas.data.Board.focus(snap, jamie, onBoard)
+        assertTrue(f.lanes.isNotEmpty() && f.lanes.all { it.label.isNotBlank() && it.items.isNotEmpty() })
+        assertEquals(onBoard.size - 1 - f.lanes.flatMap { l -> l.items.map { it.id } }.toSet().size, f.folded)
+        rule.vm { it.select(jamie) }
+        rule.onNodeWithTag("focus").assertIsDisplayed()
+        rule.shot("n10_focus_option")
+        rule.tap("focus_back")
+        rule.tap("view_Board")
+        rule.vm { fs = it.settings.focusSpaces }; assertTrue(pid !in fs)
+        rule.onAllNodesWithTag("band_why").assertCountEquals(0)
+    }
+
     /** 0.7.2: starting empty still leaves a way to load the example (Settings) and a visible way to make a space (Home). */
     @Test
     fun emptyStartCanLoadExampleAndMakeSpace() {

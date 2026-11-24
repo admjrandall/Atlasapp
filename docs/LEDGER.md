@@ -2,6 +2,12 @@
 
 Honest status. "Verified" = automated test or inspected screenshot (Robolectric). Nothing has run on a physical Fold 6 yet; items marked **device-only** can only be proven there.
 
+## 0.7.3 — Focus as an option; the board stays
+
+| Asked | Done | Test |
+|---|---|---|
+| Keep the current workspace as an option when adding new views (Nov 24 2026) | Project spaces get a **Board · Focus** switch at the top. **Board** is the 0.7 board, unchanged, and the default. **Focus** (approved mockup S-Focus) adds a one-line reason under each group, and holding a card shows what it's linked to in labelled lanes with the rest folded. The choice is remembered per space | `focusIsAnOptionBoardStaysDefault` |
+
 ## 0.7.2 — load the example later, and a visible "+ New space"
 
 | Asked | Done | Test |

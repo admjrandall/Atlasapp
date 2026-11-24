@@ -28,4 +28,4 @@ Release builds are signed only when a `keystore.properties` (with `storeFile`, `
 - [Threat model](docs/THREAT-MODEL.md) · [Test plan](docs/TEST-PLAN.md)
 - [Build ledger](docs/LEDGER.md): what was asked, what changed, and which test covers it, per release
 
-Current version: 0.7.2.
+Current version: 0.7.3.
