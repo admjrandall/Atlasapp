@@ -13,7 +13,7 @@ Tell or ask Atlas anything in one box: a name finds things, a sentence files the
 
 ## Build
 
-Requirements: JDK 17, Android SDK (compileSdk 37), minSdk 26.
+Requirements: JDK 21 (Robolectric SDK 36 needs it), Android SDK (compileSdk 37), minSdk 26.
 
 ```bash
 ./gradlew testDebugUnitTest      # Robolectric UI + screenshot tests
