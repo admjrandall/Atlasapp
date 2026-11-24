@@ -79,4 +79,67 @@ class JourneyTest {
         assertTrue("SHAPE" in kinds)
         assertEquals(3, kinds.count { it == "PART" })
     }
+
+    @Test fun itemsGoToHerePartUntilPlaced() {
+        repo.setJourney(Journeys.new(space, Shape.TRAIL))
+        val j = Journeys.of(repo.snap, space)!!
+        assertEquals(2, JourneyItems.inPart(repo.snap, j, j.here!!.id).size)
+        repo.placeInPart(space, items[1], j.parts[2].id)
+        assertEquals(listOf("Pine Ridge quote"), JourneyItems.inPart(repo.snap, j, j.here!!.id).map { it.title })
+        assertEquals(listOf("HOA rules"), JourneyItems.inPart(repo.snap, j, j.parts[2].id).map { it.title })
+        repo.placeInPart(space, items[1], j.parts[1].id)
+        assertEquals(1, repo.snap.detailsOf(space, DetailKind.PLACE).size)
+    }
+
+    @Test fun bundlesGroupByKindAndFoldDuplicates() {
+        repo.setJourney(Journeys.new(space, Shape.TRAIL))
+        repeat(6) { repo.link(repo.create(KObject(type = ObjType.IMAGE, title = "House front $it")), space, RelType.BELONGS_TO) }
+        val j = Journeys.of(repo.snap, space)!!
+        val b = JourneyItems.bundles(repo.snap, j, j.here!!.id)
+        assertEquals(listOf("PHOTOS", "DOCS"), b.map { it.key })
+        val photos = b.first()
+        assertEquals(6, photos.items.size)
+        assertEquals("near-duplicates fold to one", 1, photos.best.size)
+        assertEquals(5, photos.folded)
+    }
+
+    @Test fun hiddenSourcesStayInTheSpace() {
+        repo.setJourney(Journeys.new(space, Shape.TRAIL).copy(hidden = setOf("DOCS")))
+        val j = Journeys.of(repo.snap, space)!!
+        assertEquals(setOf("DOCS"), j.hidden)
+        assertTrue(JourneyItems.bundles(repo.snap, j, j.here!!.id).isEmpty())
+        assertEquals(2, JourneyItems.inSpace(repo.snap, space).size)
+    }
+
+    @Test fun shapePickFollowsTheSignals() {
+        assertEquals(Shape.TRAIL, ShapePick.pick(repo.snap, space).shape)
+        val dave = repo.create(KObject(type = ObjType.PROJECT, title = "Remembering Dave", projectStatus = ProjectStatus.ACTIVE))
+        repo.link(repo.create(KObject(type = ObjType.LINK, title = "Obituary", body = "David Morales, 1961 – 2026")), dave, RelType.BELONGS_TO)
+        assertEquals(Shape.REMEMBER, ShapePick.pick(repo.snap, dave).shape)
+        val trip = repo.create(KObject(type = ObjType.PROJECT, title = "Oregon coast trip", projectStatus = ProjectStatus.ACTIVE))
+        assertEquals(Shape.VOYAGE, ShapePick.pick(repo.snap, trip).shape)
+        val k = repo.create(KObject(type = ObjType.PROJECT, title = "Which play kitchen", projectStatus = ProjectStatus.ACTIVE))
+        assertEquals(Shape.CROSSROADS, ShapePick.pick(repo.snap, k).shape)
+    }
+
+    @Test fun suggestPartMatchesWords() {
+        val j = Journeys.new(space, Shape.COUNTDOWN)
+        assertEquals("Guests", JourneyItems.suggestPart(j, "Reply from the guests list")?.name)
+        assertEquals(j.here ?: j.parts.first(), JourneyItems.suggestPart(j, "random thing"))
+    }
+
+    @Test fun templatesKeepPartsNotItems() {
+        repo.setJourney(Journeys.new(space, Shape.TRAIL))
+        repo.saveTemplate("Home renovation", Journeys.of(repo.snap, space)!!)
+        val (name, t) = repo.templates().single()
+        assertEquals("Home renovation", name)
+        assertEquals(Shape.TRAIL, t.shape)
+        assertEquals(listOf("Research", "Plan", "Do it", "Finish"), t.parts.map { it.name })
+        repo.saveTemplate("Home renovation", Journeys.new(space, Shape.CLIMB))
+        assertEquals(Shape.CLIMB, repo.templates().single().second.shape)
+    }
+
+    @Test fun sourcesCountByKind() {
+        assertEquals(listOf("2 documents"), Sources.of(repo.snap, space).map { it.label })
+    }
 }

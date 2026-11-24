@@ -87,6 +87,8 @@ fun HomeScreen(vm: AtlasViewModel, snap: Snapshot) {
         }
         Spacer(Modifier.height(if (wide) 22.dp else 18.dp))
         CoreStrip(vm, snap, today)
+        Spacer(Modifier.height(if (wide) 22.dp else 18.dp))
+        JourneysSection(vm, snap, wide)
         Spacer(Modifier.height(if (wide) 26.dp else 20.dp))
         if (wide) Row(horizontalArrangement = Arrangement.spacedBy(28.dp)) {
             Column(Modifier.weight(1f)) { Week(vm, rows, todays, ticked) }
@@ -300,3 +302,32 @@ private fun SpaceChips(vm: AtlasViewModel, snap: Snapshot, today: LocalDate) {
         if (pinned.isEmpty()) Text("Tap + New space to make one.", style = T.meta, color = Atlas.SecondaryText)
     }
 }
+
+/** Home's journeys (approved board J-Home): each one in its own small animated shape with one status line; "+ New journey". */
+@Composable
+private fun JourneysSection(vm: AtlasViewModel, snap: Snapshot, wide: Boolean) {
+    val js = remember(snap) { snap.ofType(ObjType.PROJECT).filter { !it.trashed }.mapNotNull { p -> Journeys.of(snap, p.id)?.let { p to it } }.sortedByDescending { it.first.updated } }
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        Text("Journeys", style = T.band, color = Atlas.DeepPlum, modifier = Modifier.weight(1f))
+        Text("+ New journey", style = T.metaStrong.copy(fontSize = 13.sp), color = Color.White, modifier = Modifier.heightIn(min = 40.dp).clip(RoundedCornerShape(20.dp)).background(Atlas.Primary)
+            .clickable(role = Role.Button) { vm.go(Route.JourneyStart(null)) }.padding(horizontal = 14.dp).wrapContentHeight(Alignment.CenterVertically).testTag("home_new_journey"))
+    }
+    if (js.isEmpty()) { Text("Give any space a shape: a trail for a project, a tree for someone you love, a room to remember someone by.", style = T.meta, color = Atlas.SecondaryText,
+        modifier = Modifier.padding(top = 6.dp)); return }
+    val cols = if (wide) 4 else 2
+    Column(Modifier.padding(top = 8.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+        js.chunked(cols).forEach { row -> Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+            row.forEach { (p, j) ->
+                Column(Modifier.weight(1f).clip(RoundedCornerShape(20.dp)).clickable(role = Role.Button, onClickLabel = "Open ${p.title}") { vm.go(Route.Journey(p.id)) }
+                    .padding(vertical = 10.dp, horizontal = 6.dp).testTag("home_journey"), horizontalAlignment = Alignment.CenterHorizontally) {
+                    com.jmr.atlas.ui.journey.Glyph(j.shape, 72.dp)
+                    Text(p.title, style = T.metaStrong.copy(fontSize = 14.sp), color = Atlas.DeepPlum, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    Text(com.jmr.atlas.ui.journey.subtitle(snap, j), style = T.meta.copy(fontSize = 11.sp), color = Atlas.SecondaryText, maxLines = 2, overflow = TextOverflow.Ellipsis,
+                        textAlign = androidx.compose.ui.text.style.TextAlign.Center)
+                }
+            }
+            repeat(cols - row.size) { Spacer(Modifier.weight(1f)) }
+        } }
+    }
+}
+

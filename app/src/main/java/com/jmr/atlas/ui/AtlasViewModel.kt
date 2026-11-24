@@ -46,6 +46,10 @@ sealed interface Route {
     data object Security : Route { override val key = "security" }
     data object Trash : Route { override val key = "trash" }
     data class History(val id: String) : Route { override val key = "hist:$id" }
+    /** A space shown as its journey (Journeys). */
+    data class Journey(val space: String) : Route { override val key = "journey:$space" }
+    /** Start a journey: for a space (shape → sources), or a brand-new one when [space] is null (name, shape, templates). */
+    data class JourneyStart(val space: String?) : Route { override val key = "jstart:${space ?: "new"}" }
 
     companion object {
         private val fixed by lazy { listOf(Home, Review, Settings, Integrations, AiSettings, Security, Trash).associateBy { it.key } }
@@ -53,6 +57,8 @@ sealed interface Route {
             s.startsWith("space:") -> Space(s.removePrefix("space:"))
             s.startsWith("obj:") -> Item(s.removePrefix("obj:"))
             s.startsWith("hist:") -> History(s.removePrefix("hist:"))
+            s.startsWith("journey:") -> Journey(s.removePrefix("journey:"))
+            s.startsWith("jstart:") -> JourneyStart(s.removePrefix("jstart:").takeIf { it != "new" })
             else -> null
         }
     }
@@ -121,6 +127,8 @@ class AtlasViewModel(app: Application, private val saved: SavedStateHandle) : An
     // ---------------------------------------------------------------- navigation
     private fun persist() { saved["stack"] = _stack.value.joinToString("|") { it.key } }
     val route get() = _stack.value.last()
+    /** Swap the top screen (the start flow hands over to the journey it made, so Back skips the flow). */
+    fun goInstead(r: Route) { _stack.value = _stack.value.dropLast(1).filter { it != r } + r; clearBoard(); persist() }
     fun go(r: Route) { if (route == r) return; _stack.value = _stack.value.filter { it != r } + r; clearBoard(); persist() }
     fun home() { _stack.value = listOf(Route.Home); clearBoard(); persist() }
     fun back(): Boolean {
@@ -219,9 +227,13 @@ class AtlasViewModel(app: Application, private val saved: SavedStateHandle) : An
         if (prefill != null) catchField.setTextAndPlaceCursorAtEnd(prefill)
         else if (catchField.text.isNotEmpty()) catchField.edit { selectAll() }   // an old draft is selected, so typing replaces it
         catchOpenedAt = android.os.SystemClock.uptimeMillis()
-        context.value = (route as? Route.Item)?.id ?: boardSel.value?.takeIf { route is Route.Space }
+        context.value = (route as? Route.Item)?.id ?: (route as? Route.Journey)?.space ?: boardSel.value?.takeIf { route is Route.Space }
         resetParts(); attachOpen.value = false; catchOpen.value = true
     }
+    /** True while a journey shows a full-screen layer (Lens, editor, finish, adding): the input bar steps aside. */
+    val journeyCover = kotlinx.coroutines.flow.MutableStateFlow(false)
+    /** "Ask about this…" in Lens: open the box with that item as context. */
+    fun askAbout(id: String) { openCatch(); context.value = id }
     /** Closes the box; the draft (text and attachments) stays for next time. Sending is what clears it. */
     fun closeCatch() { catchOpen.value = false; attachOpen.value = false }
     /** When the box last opened: taps on the backdrop right after (keyboard still sliding in) are ignored. */

@@ -130,6 +130,7 @@ class FoldUiTest {
         rule.example()
         rule.onNodeWithTag("home").assertIsDisplayed()
         rule.shot("f01_home")
+        rule.onNodeWithTag("home").performTouchInput { swipeUp() }; rule.settle()
         rule.onAllNodesWithTag("cover").onFirst().performClick(); rule.settle()
         rule.onNodeWithTag("ribbon").assertExists()
         rule.shot("f02_board")

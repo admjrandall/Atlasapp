@@ -126,8 +126,14 @@ fun SpaceScreen(vm: AtlasViewModel, snap: Snapshot, key: String) {
         var origin by remember { mutableStateOf(Offset.Zero) }
         Box(Modifier.weight(1f).fillMaxWidth()) {
             Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(horizontal = pad).padding(top = 12.dp, bottom = 150.dp)) {
-                if (project != null) ViewSwitch(focusOn, Modifier.padding(start = 4.dp, bottom = 10.dp)) { on ->
-                    vm.settings.focusSpaces = if (on) vm.settings.focusSpaces + project.id else vm.settings.focusSpaces - project.id
+                if (project != null) {
+                    val hasJourney = Journeys.of(snap, project.id) != null
+                    ViewSwitch(focusOn, Modifier.padding(start = 4.dp, bottom = 10.dp), onJourney = { vm.go(if (hasJourney) Route.Journey(project.id) else Route.JourneyStart(project.id)) }) { on ->
+                        vm.settings.focusSpaces = if (on) vm.settings.focusSpaces + project.id else vm.settings.focusSpaces - project.id
+                    }
+                    // "Make this a journey?" (spec §4.1): offered once a space holds a few things, never again after "Not now"
+                    if (!hasJourney && project.id !in vm.settings.journeyOfferOff && JourneyItems.inSpace(snap, project.id).size >= 3)
+                        JourneyOffer(ShapePick.pick(snap, project.id).shape == Shape.REMEMBER, { vm.go(Route.JourneyStart(project.id)) }) { vm.settings.journeyOfferOff = vm.settings.journeyOfferOff + project.id }
                 }
                 if (project != null && bands.isNotEmpty()) {
                     val anyAi = bands.any { it.nameOrigin == Origin.AI }
@@ -157,7 +163,7 @@ fun SpaceScreen(vm: AtlasViewModel, snap: Snapshot, key: String) {
 
 /** Board · Focus switch at the top of a project space. Board is the 0.7 board, unchanged. */
 @Composable
-private fun ViewSwitch(focusOn: Boolean, modifier: Modifier, onChange: (Boolean) -> Unit) {
+private fun ViewSwitch(focusOn: Boolean, modifier: Modifier, onJourney: () -> Unit, onChange: (Boolean) -> Unit) {
     Row(modifier.clip(RoundedCornerShape(20.dp)).background(Atlas.Chip).padding(3.dp).testTag("view_switch")) {
         listOf(false to "Board", true to "Focus").forEach { (v, label) ->
             Box(Modifier.heightIn(min = 40.dp).clip(RoundedCornerShape(18.dp)).background(if (focusOn == v) Atlas.DeepPlum else Color.Transparent)
@@ -165,8 +171,26 @@ private fun ViewSwitch(focusOn: Boolean, modifier: Modifier, onChange: (Boolean)
                 Text(label, style = T.metaStrong.copy(fontSize = 14.sp), color = if (focusOn == v) Color.White else Atlas.DeepPlum)
             }
         }
+        Box(Modifier.heightIn(min = 40.dp).clip(RoundedCornerShape(18.dp)).clickable(role = Role.Tab) { onJourney() }.padding(horizontal = 16.dp).testTag("view_Journey"),
+            contentAlignment = Alignment.Center) { Text("Journey", style = T.metaStrong.copy(fontSize = 14.sp), color = Atlas.DeepPlum) }
     }
 }
+
+@Composable
+private fun JourneyOffer(grief: Boolean, onYes: () -> Unit, onNo: () -> Unit) =
+    Column(Modifier.padding(bottom = 12.dp).fillMaxWidth().clip(RoundedCornerShape(20.dp)).background(Atlas.PrimaryContainer.copy(alpha = 0.55f)).padding(14.dp).testTag("journey_offer")) {
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            Icon(Icons.Outlined.AutoAwesome, null, Modifier.size(15.dp).padding(top = 3.dp), tint = Atlas.Primary)
+            Text(if (grief) "Would you like to keep this somewhere, with your own photos and messages?" else "Make this a journey? I’ll give it a shape and place what’s here.",
+                style = T.body.copy(fontSize = 15.sp), color = Atlas.DeepPlum)
+        }
+        Row(Modifier.padding(top = 10.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            Text(if (grief) "Keep it" else "Make a journey", style = T.metaStrong.copy(fontSize = 14.sp), color = Color.White, modifier = Modifier.heightIn(min = 44.dp).clip(RoundedCornerShape(22.dp))
+                .background(Atlas.Primary).clickable(role = Role.Button) { onYes() }.padding(horizontal = 18.dp, vertical = 12.dp).testTag("offer_yes"))
+            Text("Not now", style = T.meta.copy(fontSize = 14.sp), color = Atlas.DeepPlum, modifier = Modifier.heightIn(min = 44.dp).clip(RoundedCornerShape(22.dp))
+                .background(Color.White).clickable(role = Role.Button) { onNo() }.padding(horizontal = 16.dp, vertical = 12.dp).testTag("offer_no"))
+        }
+    }
 
 /**
  * Focus (0.7.3, optional view): instead of lines across the whole board, the held card moves to the top and everything linked to it is
