@@ -22,6 +22,7 @@ shape, lays the space's items along it, and keeps it organized as things arrive.
 | Choosing a shape | AI picks; the other shapes are one tap away; you can switch later |
 | Spaces | Kept. Any space can become a journey. Plain spaces get a visual upgrade (section 7) |
 | Mockup review | All journeys at once, fully clickable start to finish — **approved Nov 23 2026** |
+| Keep the current workspace | **Required (Nov 24 2026):** the 0.7.x banded board stays as an option everywhere. Journeys and Focus are added *views*, never replacements. Each space has a view switch (Board · Focus · Journey when it has a shape); Board is the default for existing spaces, and the choice is remembered per space |
 | Space upgrade | **Focus only** (S-Focus board): groups that say why, tap → focus view with labelled relationship lanes, unrelated items folded. The Flow + story board (S-Flow) is **not** in scope |
 | Visual bar | At least as good as the v1 concept mockups; more interactive and more polished |
 | No boards/cards look | Journeys use their own shape, not grids of cards |
@@ -121,6 +122,15 @@ don't explain how things really interact.
   why; unconnected items fold into one "N other things" line. Back returns to groups.
 - The AI line reacts to the focused item (e.g. "Ordering seedlings unblocks the price tags").
 Not in scope: Flow lanes and Story strip (S-Flow board kept only for reference).
+Focus is an **optional view**: the 0.7.x board and its long-press lines stay exactly as they are when Board is chosen.
+
+## 7a. Build plan (one PR per phase, each shipped as a test APK)
+1. **View switch + Focus as an option** — per-space Board/Focus switch (Board default), Focus from the approved S-Focus board.
+2. **Journey data** — shape + parts stored as details on a space; Journey appears in the switch only when a space has a shape. No new screens yet.
+3. **Lens** — bundles and the item viewer (photo, video, PDF facts, link, messages, email, note, voice).
+4. **Start flow** — "Make this a journey?", shape pick with reason, sources step; manual create and templates.
+5. **Shapes**, a few per release: Trail, Living Tree, Remember (Room/Garden/Letter) → Crossroads, River, Orbit → Shelf, Voyage, Climb, Countdown.
+6. **Editing, adding with Undo, finishing, scale rules** across all shapes.
 
 ## 8. Mapping to the codebase (initial read of 0.7.1)
 - Journey = a `PROJECT` object (space) with a shape detail (e.g. `DetailKind.SHAPE`) and parts.
