@@ -58,7 +58,7 @@ calls and emails, waiting on them). Can replace any of the ten.
 
 ### AI shape picking — signals
 - Has a fixed date in the future → Countdown. Has a numeric target → Climb.
-- Names a person who died (obituary, "passed") → Two Lines. Names a living person you keep up with → Living Tree.
+- Names a person who died (obituary, "passed") → Remember. Names a living person you keep up with → Living Tree.
 - Options / "which" / "vs" / reviews → Crossroads. "Learn / how to / practice" → River.
 - Repeats yearly/monthly → Orbit. Places + dates away from home → Voyage.
 - Things to keep, no end → Shelf. Otherwise a multi-step goal → Trail.
