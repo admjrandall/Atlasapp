@@ -266,6 +266,11 @@ class Repository(context: Context, dbName: String? = "atlas.db", encrypted: Bool
     fun deleteDetail(id: String) = write { d -> snap.details.firstOrNull { it.id == id }?.let { with(d) { deleteDetail(id) } } }
 
     /** Replaces all details of the given kinds for one object (used by editors and contact sync) in one transaction. */
+    /** Save a space's journey (shape + parts). The space's items and links are not touched. */
+    fun setJourney(j: Journey, note: String? = null) = replaceDetails(j.spaceId, setOf(DetailKind.SHAPE, DetailKind.PART), Journeys.details(j), note)
+    /** Remove a space's journey; the space and everything in it stay, shown on the board as before. */
+    fun clearJourney(spaceId: String) = replaceDetails(spaceId, setOf(DetailKind.SHAPE, DetailKind.PART), emptyList(), "journey removed")
+
     fun replaceDetails(objectId: String, kinds: Set<DetailKind>, list: List<Detail>, note: String? = null) = write { d ->
         with(d) {
             snap.details.filter { it.objectId == objectId && it.kind in kinds }.forEach { deleteDetail(it.id) }

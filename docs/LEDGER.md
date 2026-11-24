@@ -2,6 +2,12 @@
 
 Honest status. "Verified" = automated test or inspected screenshot (Robolectric). Nothing has run on a physical Fold 6 yet; items marked **device-only** can only be proven there.
 
+## Journeys phase 2 (unreleased) — journey data
+
+| Asked | Done | Test |
+|---|---|---|
+| Journeys (spec) need a place to live | `model/Journey.kt`: ten `Shape`s (Remember with Room/Garden/Letter styles), ordered `Part`s with a state (later/next/here/done), starter parts per shape. Stored as SHAPE/PART details on the space, so no schema change and exports carry them. `Repository.setJourney` / `clearJourney`. Changing shape keeps every item, link and part name. Nothing visible yet; the board is unchanged | `JourneyTest` (7) |
+
 ## 0.7.3 — Focus as an option; the board stays
 
 | Asked | Done | Test |
