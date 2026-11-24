@@ -1,7 +1,7 @@
 # Atlas Journeys — design spec (draft for approval)
 
-Status: **planning — no code yet.** Mockups must be approved before any build work.
-Mockup canvas (v1 concepts): https://claude.ai/artifact/L9srPA2YwQw9SnpYRwHbJR
+Status: **mockups approved (Nov 23 2026).** Next: phased build plan, then code.
+Mockup canvas: https://claude.ai/artifact/L9srPA2YwQw9SnpYRwHbJR — page **Journeys v2** is the approved reference (page 1 holds the v1 concepts).
 
 ## 1. The idea
 
@@ -21,7 +21,8 @@ shape, lays the space's items along it, and keeps it organized as things arrive.
 | Shapes | Ten in the first set (below); Remember has three styles |
 | Choosing a shape | AI picks; the other shapes are one tap away; you can switch later |
 | Spaces | Kept. Any space can become a journey. Plain spaces get a visual upgrade (section 7) |
-| Mockup review | All journeys at once, fully clickable start to finish |
+| Mockup review | All journeys at once, fully clickable start to finish — **approved Nov 23 2026** |
+| Space upgrade | **Focus only** (S-Focus board): groups that say why, tap → focus view with labelled relationship lanes, unrelated items folded. The Flow + story board (S-Flow) is **not** in scope |
 | Visual bar | At least as good as the v1 concept mockups; more interactive and more polished |
 | No boards/cards look | Journeys use their own shape, not grids of cards |
 
@@ -112,12 +113,14 @@ The pick is shown with a one-line reason ("It has a date: Sat Nov 29") and the a
 ## 7. Spaces upgrade (plain, non-journey spaces)
 Problem today (0.7.1): cards are good, but connecting lines and band groupings can look cluttered and
 don't explain how things really interact.
-Directions to mock up:
-- **Focus, not lines everywhere** — tap an item: it moves to center; related items line up beside it
-  grouped by relationship ("blocks", "assigned to", "from"), each labelled; the rest fold to counts.
-- **Readable groups** — every band says why it's a group ("With Priya · 4 things · 1 late").
-- **Flow lanes** — for spaces with dependencies, a left-to-right flow (waiting → doing → done).
-- **Story strip** — a time ribbon showing what happened in this space and what's next.
+**Approved: Focus** (reference board S-Focus).
+- **Readable groups** — no connecting lines in the default view; every band says why it's a group
+  ("With Priya · 4 things · 1 late") with a one-line reason under it.
+- **Focus view** — tap any item: it moves to the top; everything connected to it is listed in labelled
+  lanes by relationship ("Assigned to", "Blocks", "Came from", "For", "Waiting on"), each with a short
+  why; unconnected items fold into one "N other things" line. Back returns to groups.
+- The AI line reacts to the focused item (e.g. "Ordering seedlings unblocks the price tags").
+Not in scope: Flow lanes and Story strip (S-Flow board kept only for reference).
 
 ## 8. Mapping to the codebase (initial read of 0.7.1)
 - Journey = a `PROJECT` object (space) with a shape detail (e.g. `DetailKind.SHAPE`) and parts.
