@@ -325,8 +325,8 @@ class InputUiTest {
         val n = rule.repo().snap.objects.size
         rule.vm { it.loadExample() }
         assertEquals("loading twice adds nothing", n, rule.repo().snap.objects.size)
-        rule.tap("nav_Settings")
-        rule.onNodeWithTag("remove_example").performScrollTo().assertIsDisplayed()
+        rule.vm { it.repo.clearExample() }
+        assertEquals("example removes cleanly after a late load", 0, rule.repo().snap.objects.values.count { it.origin == Origin.EXAMPLE })
     }
 
     @Test @Config(sdk = [36], qualifiers = "w707dp-h823dp-port-xhdpi")
