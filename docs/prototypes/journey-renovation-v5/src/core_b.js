@@ -6,17 +6,17 @@ const TABS = ['needs', 'money', 'agreed', 'record'];
 function render() {
   const p = cur(); const H0 = HOMES[S.home];
   const ae = document.activeElement; const fk = ae && ae.dataset && ae.dataset.fk && $('#sbody').contains(ae) ? ae.dataset.fk : null; const selS = fk ? ae.selectionStart : null;
-  $('#homeIc').textContent = H0.icon; $('#homeName').textContent = H0.name; $('#homeName').classList.toggle('p', !!p);
+  $('#homeIc').textContent = H0.icon; $('#homeName').textContent = H0.name; $('#homeName').classList.toggle('p', !!p); $('#titleSw').classList.toggle('inp', !!p);
   $('#crSep').style.display = p ? '' : 'none'; $('#ptitle').style.display = p ? '' : 'none'; $('#ptitle').textContent = p ? p.name : '';
-  $('#backB').style.display = (S.p || S.area || S.time || POP) ? '' : 'none';
+  $('#backB').style.display = S.p ? '' : 'none'; $('#backB').setAttribute('aria-label', `Back to ${H0.name}`); $('#backT').textContent = H0.name;
   $('#xray').style.display = p ? '' : 'none'; $('#timeB').style.display = p ? 'none' : '';
-  $('#areachip').classList.toggle('on', !!(p && S.area)); $('#areachip').innerHTML = p && S.area ? `<button id="clrA">📍 Only ${esc(p.areas[S.area])} · show all ✕</button>` : '';
-  if ($('#clrA')) $('#clrA').addEventListener('click', () => { POP = null; popEl.classList.remove('on'); focusArea(S.area); });
+  $('#areachip').classList.toggle('on', !!(p && S.area)); $('#areachip').innerHTML = p && S.area ? `<span>📍 Showing only <b>${esc(p.areas[S.area])}</b></span><button id="clrA">Show everything</button>` : '';
+  if ($('#clrA')) $('#clrA').addEventListener('click', () => focusArea(S.area));
   const B = $('#sbody');
   if (!p) {
     const L = projOf(S.home); const open = L.reduce((s, q) => s + (q.status === 'done' ? 0 : q.needs.length), 0);
     $('#where').textContent = H0.kind;
-    $('#scope').textContent = open ? `${open} thing${open === 1 ? '' : 's'} need${open === 1 ? 's' : ''} you` : 'All caught up';
+    $('#scope').textContent = H0.name;
     $('#scopeSub').textContent = L.length ? `${L.filter(q => q.status === 'active').length} in progress · ${L.filter(q => q.status === 'planned').length} planned · ${L.filter(q => q.status === 'done').length} done` : 'No projects yet';
     $('#detB').style.display = 'none'; $('#stepper').innerHTML = ''; $('#four').style.display = L.length ? '' : 'none'; $('#four').classList.add('three');
     if (S.time) S.htab = 'years'; const ht = S.htab || 'week'; const ev = events(S.home);
@@ -36,7 +36,7 @@ function render() {
   $('#detB').style.display = ''; $('#four').style.display = ''; $('#four').classList.remove('three');
   const stepI = Math.min(p.here, p.stops.length - 1);
   $('#where').textContent = p.status === 'done' ? `Finished ${p.year} · ${p.where}` : p.status === 'planned' ? `Planned ${p.year} · ${p.where}` : `Step ${stepI + 1} of ${p.stops.length} · ${p.where}`;
-  $('#scope').textContent = S.area ? p.areas[S.area] : p.name; $('#scopeSub').textContent = S.area ? p.name : `${THINGS[p.thing].place} · ${THINGS[p.thing].name}${p.status === 'done' ? ' · finished ' + p.year : ''}`;
+  $('#scope').textContent = p.name; $('#scopeSub').textContent = `${THINGS[p.thing].place} · ${THINGS[p.thing].name}${p.status === 'done' ? ' · finished ' + p.year : ''}`;
   const n = p.stops.length; const fillTo = p.status === 'done' ? 1 : n > 1 ? Math.min(p.here, n - 1) / (n - 1) : 0;
   $('#stepper').innerHTML = `<div class="stp"><div class="fl" style="width:calc((100% - 10px) * ${fillTo})"></div>${p.stops.map((s, i) => { const st = p.status === 'done' || i < p.here ? 'd' : i === p.here && p.status === 'active' ? 'h' : i === p.here ? 'h' : ''; return `<button class="${st}" data-st="${i}" aria-label="Step ${i + 1}: ${esc(s)}${st === 'h' ? ' (you are here)' : st === 'd' ? ' (done)' : ''}"><i></i><span>${esc(s)}</span></button>`; }).join('')}</div>`;
   $('#stepper').querySelectorAll('[data-st]').forEach(b => b.addEventListener('click', () => openStep(p, +b.dataset.st)));

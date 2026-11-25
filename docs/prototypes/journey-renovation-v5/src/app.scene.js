@@ -55,7 +55,8 @@ function mesh(g, m, x = 0, y = 0, z = 0, p) { const o = new THREE.Mesh(g, m); o.
 function box(w, h, d, m, x, y, z, p) { return mesh(new THREE.BoxGeometry(w, h, d), m, x, y, z, p); }
 function bbox(w, h, d, m, x, y, z, p) { const g = new THREE.BoxGeometry(w, h, d); g.translate(0, h / 2, 0); return mesh(g, m, x, y, z, p); }
 function grp(p, x = 0, y = 0, z = 0) { const g = new THREE.Group(); g.position.set(x, y, z); (p || ROOT).add(g); return g; }
-function uv(m, rx, ry) { const t = m.material.map; if (!t) return; m.material = m.material.clone(); m.material.map = t.clone(); m.material.map.needsUpdate = true; m.material.map.repeat.set(rx, ry); }
+const CLONES = new Map();
+function uv(m, rx, ry) { const t = m.material.map; if (!t) return; const base = m.material; m.material = m.material.clone(); if (!CLONES.has(base)) CLONES.set(base, []); CLONES.get(base).push(m.material); m.material.map = t.clone(); m.material.map.needsUpdate = true; m.material.map.repeat.set(rx, ry); }
 
 const PARTS = {}; const TAGPOS = {};
 function part(key, o, pos) { (PARTS[key] = PARTS[key] || []).push(o); if (pos) TAGPOS[key] = pos; return o; }

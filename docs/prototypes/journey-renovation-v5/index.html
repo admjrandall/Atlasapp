@@ -464,6 +464,16 @@ input::placeholder,textarea::placeholder{color:#8d86a3}
 .sheet[data-st=full]{border-radius:0;box-shadow:none}
 .sheet:not([data-st=full]) .sbody{overflow:hidden;touch-action:none}
 .sheet.drag{transition:none!important}
+.ib .tl,.ib .bt{display:none}
+@media (min-width:600px){.tools .ib{width:auto;padding:0 12px;gap:6px;display:flex;align-items:center;border-radius:20px}.tools .ib .tl{display:inline;font-size:13px;font-weight:700}.ib.back{width:auto;padding:0 12px 0 10px;gap:6px;display:flex;align-items:center;border-radius:20px}.ib.back .bt{display:inline;font-size:14px;font-weight:600}}
+.crumb.inp #homeIc,.crumb.inp .hn,.crumb.inp .sep{display:none}
+.crumb #homeIc{flex:none}
+.mapb{width:auto!important;padding:0 12px;border-radius:18px;font-size:14px!important;font-weight:700}
+.areachip{display:none;align-items:center;gap:8px}
+.areachip.on{display:flex}
+.areachip span{flex:1;font-size:13px;color:#8a4d12;background:var(--amb2);border-radius:15px;padding:6px 12px;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.areachip button{background:var(--v2)!important;color:var(--v)!important;flex:none}
+.ghostnote.xr{background:#1d1830;cursor:pointer;pointer-events:auto}
 .timebar .yr .xb{width:28px;height:28px}
 .timebar .ticks i{cursor:pointer}
 .timebar .ticks i.now{background:var(--v);width:10px;height:10px;top:1px;margin-left:-5px;border-radius:5px}
@@ -487,8 +497,8 @@ input::placeholder,textarea::placeholder{color:#8d86a3}
     <div id="tags"></div>
     <div class="pop" id="pop"></div>
     <div class="hd">
-      <div class="bar"><button class="ib back" id="backB" aria-label="Back">←</button><button class="crumb" id="titleSw" aria-label="Switch home or project"><span id="homeIc">🏡</span><span class="hn" id="homeName">Main house</span><span class="sep" id="crSep">›</span><b id="ptitle">Everything</b><span class="car">▾</span></button>
-      <div class="tools"><button class="ib" id="timeB" aria-label="The house through time" title="The house through time"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="13" r="8"/><path d="M12 9v4l2.5 2.5M9 2h6"/></svg></button><button class="ib" id="xray" aria-label="X-ray: what’s hidden" title="X-ray: what’s hidden"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="13" height="13" rx="2"/><rect x="8" y="8" width="13" height="13" rx="2" stroke-dasharray="2 2.5"/></svg></button><button class="ib" id="shareB" aria-label="Share" title="Share"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round"><path d="M12 15V3M7 8l5-5 5 5"/><path d="M5 12v7a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-7"/></svg></button><button class="ib" id="exportB" aria-label="Export" title="Export"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v12M7 10l5 5 5-5"/><path d="M4 17v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-2"/></svg></button></div></div>
+      <div class="bar"><button class="ib back" id="backB" aria-label="Back">←<span class="bt" id="backT"></span></button><button class="crumb" id="titleSw" aria-label="Switch home or project"><span id="homeIc">🏡</span><span class="hn" id="homeName">Main house</span><span class="sep" id="crSep">›</span><b id="ptitle">Everything</b><span class="car">▾</span></button>
+      <div class="tools"><button class="ib" id="timeB" aria-label="The house through time" title="The house through time"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="13" r="8"/><path d="M12 9v4l2.5 2.5M9 2h6"/></svg><span class="tl">History</span></button><button class="ib" id="xray" aria-label="X-ray: what’s hidden" title="X-ray: what’s hidden"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="13" height="13" rx="2"/><rect x="8" y="8" width="13" height="13" rx="2" stroke-dasharray="2 2.5"/></svg><span class="tl">X-ray</span></button><button class="ib" id="shareB" aria-label="Share" title="Share"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round"><path d="M12 15V3M7 8l5-5 5 5"/><path d="M5 12v7a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-7"/></svg><span class="tl">Share</span></button><button class="ib" id="exportB" aria-label="Export" title="Export"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v12M7 10l5 5 5-5"/><path d="M4 17v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-2"/></svg><span class="tl">Export</span></button></div></div>
       <div class="sub" id="where"></div>
       <div class="timebar" id="timebar"></div>
     </div>
@@ -496,7 +506,7 @@ input::placeholder,textarea::placeholder{color:#8d86a3}
   </div>
   <div class="sheet" id="sheet">
     <div class="grabzone" id="grabzone" title="Drag, or tap to resize"><div class="grab"></div></div>
-    <div class="shead" id="shead"><button class="mapb" id="mapB" aria-label="Back to the map">⌄</button><div class="t"><b id="scope">Whole house</b><small id="scopeSub"></small></div><button class="pill2" id="detB">Details</button><button class="fab" id="fab" aria-label="Add">＋</button></div>
+    <div class="shead" id="shead"><button class="mapb" id="mapB" aria-label="Back to the map">⌄ Map</button><div class="t"><b id="scope">Whole house</b><small id="scopeSub"></small></div><button class="pill2" id="detB">Details</button><button class="fab" id="fab" aria-label="Add">＋</button></div>
     <div class="stepper" id="stepper"></div>
     <div class="areachip" id="areachip"></div>
     <div class="four" id="four"></div>

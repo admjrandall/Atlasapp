@@ -17,7 +17,7 @@ function buildTags() {
     projOf(S.home).filter(q => q.status !== 'done').forEach(q => { const pos = projPos(q).slice(); const key = pos.map(v => Math.round(v)).join(','); seen[key] = (seen[key] || 0) + 1; pos[1] += (seen[key] - 1) * .9; const n = q.needs.length; tagEls.push({ el: mk('tag' + (POP && POP.id === q.id ? ' sel' : ''), `<span class="n ${n ? '' : 'z'}">${n || '✓'}</span><span>${q.icon} ${esc(q.name)}</span>`, () => POP && POP.id === q.id ? closePop() : openPop({ kind: 'proj', id: q.id, pos })), pos }); });
     return;
   }
-  Object.entries(p.areas).forEach(([k, name]) => { const n = p.needs.filter(x => x.area === k).length; tagEls.push({ el: mk('tag' + (S.area === k ? ' sel' : ''), `<span class="n ${n ? '' : 'z'}">${n || '✓'}</span><span>${esc(name)}</span>`, () => focusArea(k, true)), pos: areaPos(k) }); });
+  Object.entries(p.areas).forEach(([k, name]) => { const n = p.needs.filter(x => x.area === k).length; tagEls.push({ el: mk('tag' + (S.area === k ? ' sel' : ''), `<span class="n ${n ? '' : 'z'}">${n || '✓'}</span><span>${esc(name)}</span>`, () => focusArea(k)), pos: areaPos(k) }); });
   p.photos.forEach(ph => pinEls.push({ el: mk('pin', ph.src ? `<img src="${ph.src}" alt="" style="width:100%;height:100%;object-fit:cover;border-radius:17px">` : '📷', () => openPhoto(p, ph), ph.t), pos: ph.pos }));
   if (p.id === 'roof') pinEls.push({ el: mk('pin', '!', () => toast('Sample: the roofer flagged a soft spot here — that’s what the per-sheet price covers'), 'Soft spot'), pos: rotPos });
 }
@@ -66,6 +66,7 @@ function placePop() {
    the house through time
    ====================================================================== */
 const TODAY = 2026;
+function setM(base, o) { [base, ...(CLONES.get(base) || [])].forEach(m => { for (const k in o) { if (k === 'color') m.color.set(o[k]); else m[k] = o[k]; } m.needsUpdate = true; }); }
 const LOOK0 = { roof: '#5a5f69', oldRoof: '#a0724f', siding: '#d6c49c', trim: '#f2ede2' };
 const hexOf = v => { const c = Object.values(COLOURS).flat().find(x => v && v.startsWith(x.n)); return c && c.hex; };
 const fieldOf = (q, k) => q && (q.details.find(f => f.k === k) || {}).v;
@@ -75,16 +76,18 @@ function applyLook() {
   const mainH = S.home === 'main'; const roofP = mainH && P('roof'), sidP = mainH && P('siding'), yardP = mainH && P('yard'); const pid = p && p.id;
   let rc = mainH && y < 2009 ? LOOK0.oldRoof : LOOK0.roof;
   if (roofP && (pid === 'roof' || (timeOn && y >= effYear(roofP)))) rc = hexOf(fieldOf(roofP, 'Colour')) || rc;
-  mats.roof.color.set(rc);
+  setM(mats.roof, { color: rc });
   let sc = LOOK0.siding, tc = LOOK0.trim;
   if (sidP && (pid === 'siding' || (timeOn && y >= effYear(sidP)))) { sc = hexOf(fieldOf(sidP, 'Colour')) || sc; tc = hexOf(fieldOf(sidP, 'Trim colour')) || tc; }
-  mats.siding.color.set(sc); mats.trim.color.set(tc);
+  setM(mats.siding, { color: sc }); setM(mats.trim, { color: tc });
   FENCE.forEach(f => f.visible = !mainH || y >= 2019);
   const pat = pid === 'yard' || (timeOn && yardP && y >= effYear(yardP)); patio.visible = patioEdge.visible = !!pat;
   const gn = $('#ghostnote'); let note = '';
-  if (timeOn && y > TODAY) note = `Planned — not real yet · ${y}`;
+  const XT = { rooms: 'inside the walls — wiring, pipes, studs', roof: 'the roof deck under the shingles', siding: 'the sheathing under the siding', yard: 'buried lines under the yard', deck: 'the footings', item: 'what’s behind it', condo: 'inside the walls' };
+  if (S.xray && p) note = `X-ray: ${XT[p.view] || 'what’s hidden'} · tap to turn off`;
+  else if (timeOn && y > TODAY) note = `Planned — not real yet · ${y}`;
   else if (p && p.status !== 'done' && ['roof', 'siding', 'yard'].includes(pid)) note = 'Showing your choices — not built yet';
-  gn.textContent = note; gn.classList.toggle('on', !!note);
+  gn.textContent = note; gn.classList.toggle('on', !!note); gn.classList.toggle('xr', !!(S.xray && p));
 }
 const previewAll = applyLook;
 function events(h) {
@@ -123,10 +126,11 @@ function applyView() {
   roof.visible = !cut; wins.visible = !cut; porch.children[porch.children.length - 1].visible = !cut;
   const it = v === 'item'; groof.visible = !it; gd.visible = !it; gFront.visible = !it; gdTrim.visible = !it; gFront.scale.y = 1;
   const x = S.xray;
-  mats.siding.opacity = x && (v === 'siding' || v === 'rooms') ? .16 : 1; mats.siding.depthWrite = !(x && (v === 'siding' || v === 'rooms'));
-  mats.paint.transparent = x && v === 'rooms'; mats.paint.opacity = x && v === 'rooms' ? .2 : 1; mats.paint.depthWrite = !(x && v === 'rooms'); mats.paint.needsUpdate = true;
-  mats.roof.opacity = x && v === 'roof' ? .18 : 1; mats.roof.depthWrite = !(x && v === 'roof');
-  mats.grass.opacity = x && (v === 'yard' || v === 'deck') ? .45 : 1; mats.grass.depthWrite = !(x && (v === 'yard' || v === 'deck'));
+  const xs = x && (v === 'siding' || v === 'rooms'), xp = x && v === 'rooms', xr = x && v === 'roof', xg = x && (v === 'yard' || v === 'deck');
+  setM(mats.siding, { opacity: xs ? .16 : 1, depthWrite: !xs });
+  setM(mats.paint, { transparent: xp, opacity: xp ? .2 : 1, depthWrite: !xp });
+  setM(mats.roof, { opacity: xr ? .18 : 1, depthWrite: !xr });
+  setM(mats.grass, { opacity: xg ? .45 : 1, depthWrite: !xg });
   studs.visible = x && v === 'rooms'; sheath.visible = x && v === 'siding'; deck.visible = x && v === 'roof'; under.visible = x && v === 'yard'; footings.visible = x && v === 'deck';
   $('#xray').classList.toggle('on', x); $('#xray').setAttribute('aria-pressed', x);
   applyLook(); highlight();
@@ -170,7 +174,7 @@ function arm() { try { if (depth() > 0 && !armed) { history.pushState({ atlas: 1
 function navBack() { if (modalOpen) closeModal(); else if (fullStack.length) popFull(); else if (POP) closePop(); else if (sheetState === 'full') setSheet('half'); else if (S.time) setTime(false); else if (S.area) focusArea(S.area); else if (S.p) go(null); }
 addEventListener('popstate', () => { armed = false; navBack(); arm(); });
 addEventListener('keydown', e => { if (e.key === 'Escape' && !(e.target.matches && e.target.matches('input,textarea'))) navBack(); });
-$('#backB').addEventListener('click', navBack);
+$('#backB').addEventListener('click', () => { if (S.p) go(null); else navBack(); });
 
 /* ======================================================================
    tapping the 3D
@@ -186,14 +190,12 @@ canvas.addEventListener('pointerup', e => {
     const h = ray.intersectObjects(objs); if (h.length) { const id = owner.get(h[0].object); if (POP && POP.id === id) closePop(); else openPop({ kind: 'proj', id, pos: h[0].point.toArray() }); } else closePop(); return;
   }
   Object.keys(p.areas).forEach(k => (PARTS[k] || []).forEach(m => { if (isShown(m)) { m.userData.ak = k; objs.push(m); } })); const h = ray.intersectObjects(objs);
-  if (h.length) focusArea(h[0].object.userData.ak, true, h[0].point.toArray()); else if (S.area) focusArea(S.area); else closePop();
+  if (h.length) focusArea(h[0].object.userData.ak);
 });
-function focusArea(k, fromMap, at) {
-  const p = cur(); if (!p) return;
-  if (S.area === k && fromMap && POP && POP.k === k) { S.area = null; POP = null; popEl.classList.remove('on'); }
-  else if (S.area === k && !fromMap) { S.area = null; POP = null; popEl.classList.remove('on'); }
-  else { S.area = k; if (fromMap) { POP = { kind: 'area', k, pos: at || areaPos(k) }; } }
-  buzz(8); flyTo(S.area ? (AREACAM[S.area] || CAM[viewOf(p)]) : CAM[viewOf(p)]); buildTags(); highlight(); render(); drawPop(); arm();
+function focusArea(k) {
+  const p = cur(); if (!p) return; POP = null; popEl.classList.remove('on');
+  S.area = S.area === k ? null : k;
+  buzz(8); flyTo(S.area ? (AREACAM[S.area] || CAM[viewOf(p)]) : CAM[viewOf(p)]); buildTags(); highlight(); render(); if (S.area) arm();
 }
 function go(id, tab = 'needs') {
   const q = id ? P(id) : null; if (q && q.home !== S.home) S.home = q.home; if (q && q.status === 'done' && tab === 'needs') tab = 'record';
@@ -203,5 +205,6 @@ function go(id, tab = 'needs') {
 function goHome(h) { S.home = h; save(); if (S.time) { buildTime(); } go(null); }
 $('#xray').addEventListener('click', () => { if (!cur()) { toast('Open a project first — x-ray shows what’s hidden for that job'); return; } S.xray = !S.xray; S.tab = S.xray ? 'record' : (S.tab === 'record' ? 'needs' : S.tab); applyView(); render(); buzz(10); });
 $('#timeB').addEventListener('click', () => setTime(!S.time));
+$('#ghostnote').addEventListener('click', () => { if (S.xray && cur()) $('#xray').click(); });
 $('#titleSw').addEventListener('click', () => openSwitcher());
 $('#detB').addEventListener('click', () => openDetails());

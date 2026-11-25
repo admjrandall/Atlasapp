@@ -193,7 +193,8 @@ function mesh(g, m, x = 0, y = 0, z = 0, p) { const o = new THREE.Mesh(g, m); o.
 function box(w, h, d, m, x, y, z, p) { return mesh(new THREE.BoxGeometry(w, h, d), m, x, y, z, p); }
 function bbox(w, h, d, m, x, y, z, p) { const g = new THREE.BoxGeometry(w, h, d); g.translate(0, h / 2, 0); return mesh(g, m, x, y, z, p); }
 function grp(p, x = 0, y = 0, z = 0) { const g = new THREE.Group(); g.position.set(x, y, z); (p || ROOT).add(g); return g; }
-function uv(m, rx, ry) { const t = m.material.map; if (!t) return; m.material = m.material.clone(); m.material.map = t.clone(); m.material.map.needsUpdate = true; m.material.map.repeat.set(rx, ry); }
+const CLONES = new Map();
+function uv(m, rx, ry) { const t = m.material.map; if (!t) return; const base = m.material; m.material = m.material.clone(); if (!CLONES.has(base)) CLONES.set(base, []); CLONES.get(base).push(m.material); m.material.map = t.clone(); m.material.map.needsUpdate = true; m.material.map.repeat.set(rx, ry); }
 
 const PARTS = {}; const TAGPOS = {};
 function part(key, o, pos) { (PARTS[key] = PARTS[key] || []).push(o); if (pos) TAGPOS[key] = pos; return o; }
@@ -382,7 +383,7 @@ function buildTags() {
     projOf(S.home).filter(q => q.status !== 'done').forEach(q => { const pos = projPos(q).slice(); const key = pos.map(v => Math.round(v)).join(','); seen[key] = (seen[key] || 0) + 1; pos[1] += (seen[key] - 1) * .9; const n = q.needs.length; tagEls.push({ el: mk('tag' + (POP && POP.id === q.id ? ' sel' : ''), `<span class="n ${n ? '' : 'z'}">${n || '✓'}</span><span>${q.icon} ${esc(q.name)}</span>`, () => POP && POP.id === q.id ? closePop() : openPop({ kind: 'proj', id: q.id, pos })), pos }); });
     return;
   }
-  Object.entries(p.areas).forEach(([k, name]) => { const n = p.needs.filter(x => x.area === k).length; tagEls.push({ el: mk('tag' + (S.area === k ? ' sel' : ''), `<span class="n ${n ? '' : 'z'}">${n || '✓'}</span><span>${esc(name)}</span>`, () => focusArea(k, true)), pos: areaPos(k) }); });
+  Object.entries(p.areas).forEach(([k, name]) => { const n = p.needs.filter(x => x.area === k).length; tagEls.push({ el: mk('tag' + (S.area === k ? ' sel' : ''), `<span class="n ${n ? '' : 'z'}">${n || '✓'}</span><span>${esc(name)}</span>`, () => focusArea(k)), pos: areaPos(k) }); });
   p.photos.forEach(ph => pinEls.push({ el: mk('pin', ph.src ? `<img src="${ph.src}" alt="" style="width:100%;height:100%;object-fit:cover;border-radius:17px">` : '📷', () => openPhoto(p, ph), ph.t), pos: ph.pos }));
   if (p.id === 'roof') pinEls.push({ el: mk('pin', '!', () => toast('Sample: the roofer flagged a soft spot here — that’s what the per-sheet price covers'), 'Soft spot'), pos: rotPos });
 }
@@ -431,6 +432,7 @@ function placePop() {
    the house through time
    ====================================================================== */
 const TODAY = 2026;
+function setM(base, o) { [base, ...(CLONES.get(base) || [])].forEach(m => { for (const k in o) { if (k === 'color') m.color.set(o[k]); else m[k] = o[k]; } m.needsUpdate = true; }); }
 const LOOK0 = { roof: '#5a5f69', oldRoof: '#a0724f', siding: '#d6c49c', trim: '#f2ede2' };
 const hexOf = v => { const c = Object.values(COLOURS).flat().find(x => v && v.startsWith(x.n)); return c && c.hex; };
 const fieldOf = (q, k) => q && (q.details.find(f => f.k === k) || {}).v;
@@ -440,16 +442,18 @@ function applyLook() {
   const mainH = S.home === 'main'; const roofP = mainH && P('roof'), sidP = mainH && P('siding'), yardP = mainH && P('yard'); const pid = p && p.id;
   let rc = mainH && y < 2009 ? LOOK0.oldRoof : LOOK0.roof;
   if (roofP && (pid === 'roof' || (timeOn && y >= effYear(roofP)))) rc = hexOf(fieldOf(roofP, 'Colour')) || rc;
-  mats.roof.color.set(rc);
+  setM(mats.roof, { color: rc });
   let sc = LOOK0.siding, tc = LOOK0.trim;
   if (sidP && (pid === 'siding' || (timeOn && y >= effYear(sidP)))) { sc = hexOf(fieldOf(sidP, 'Colour')) || sc; tc = hexOf(fieldOf(sidP, 'Trim colour')) || tc; }
-  mats.siding.color.set(sc); mats.trim.color.set(tc);
+  setM(mats.siding, { color: sc }); setM(mats.trim, { color: tc });
   FENCE.forEach(f => f.visible = !mainH || y >= 2019);
   const pat = pid === 'yard' || (timeOn && yardP && y >= effYear(yardP)); patio.visible = patioEdge.visible = !!pat;
   const gn = $('#ghostnote'); let note = '';
-  if (timeOn && y > TODAY) note = `Planned — not real yet · ${y}`;
+  const XT = { rooms: 'inside the walls — wiring, pipes, studs', roof: 'the roof deck under the shingles', siding: 'the sheathing under the siding', yard: 'buried lines under the yard', deck: 'the footings', item: 'what’s behind it', condo: 'inside the walls' };
+  if (S.xray && p) note = `X-ray: ${XT[p.view] || 'what’s hidden'} · tap to turn off`;
+  else if (timeOn && y > TODAY) note = `Planned — not real yet · ${y}`;
   else if (p && p.status !== 'done' && ['roof', 'siding', 'yard'].includes(pid)) note = 'Showing your choices — not built yet';
-  gn.textContent = note; gn.classList.toggle('on', !!note);
+  gn.textContent = note; gn.classList.toggle('on', !!note); gn.classList.toggle('xr', !!(S.xray && p));
 }
 const previewAll = applyLook;
 function events(h) {
@@ -488,10 +492,11 @@ function applyView() {
   roof.visible = !cut; wins.visible = !cut; porch.children[porch.children.length - 1].visible = !cut;
   const it = v === 'item'; groof.visible = !it; gd.visible = !it; gFront.visible = !it; gdTrim.visible = !it; gFront.scale.y = 1;
   const x = S.xray;
-  mats.siding.opacity = x && (v === 'siding' || v === 'rooms') ? .16 : 1; mats.siding.depthWrite = !(x && (v === 'siding' || v === 'rooms'));
-  mats.paint.transparent = x && v === 'rooms'; mats.paint.opacity = x && v === 'rooms' ? .2 : 1; mats.paint.depthWrite = !(x && v === 'rooms'); mats.paint.needsUpdate = true;
-  mats.roof.opacity = x && v === 'roof' ? .18 : 1; mats.roof.depthWrite = !(x && v === 'roof');
-  mats.grass.opacity = x && (v === 'yard' || v === 'deck') ? .45 : 1; mats.grass.depthWrite = !(x && (v === 'yard' || v === 'deck'));
+  const xs = x && (v === 'siding' || v === 'rooms'), xp = x && v === 'rooms', xr = x && v === 'roof', xg = x && (v === 'yard' || v === 'deck');
+  setM(mats.siding, { opacity: xs ? .16 : 1, depthWrite: !xs });
+  setM(mats.paint, { transparent: xp, opacity: xp ? .2 : 1, depthWrite: !xp });
+  setM(mats.roof, { opacity: xr ? .18 : 1, depthWrite: !xr });
+  setM(mats.grass, { opacity: xg ? .45 : 1, depthWrite: !xg });
   studs.visible = x && v === 'rooms'; sheath.visible = x && v === 'siding'; deck.visible = x && v === 'roof'; under.visible = x && v === 'yard'; footings.visible = x && v === 'deck';
   $('#xray').classList.toggle('on', x); $('#xray').setAttribute('aria-pressed', x);
   applyLook(); highlight();
@@ -535,7 +540,7 @@ function arm() { try { if (depth() > 0 && !armed) { history.pushState({ atlas: 1
 function navBack() { if (modalOpen) closeModal(); else if (fullStack.length) popFull(); else if (POP) closePop(); else if (sheetState === 'full') setSheet('half'); else if (S.time) setTime(false); else if (S.area) focusArea(S.area); else if (S.p) go(null); }
 addEventListener('popstate', () => { armed = false; navBack(); arm(); });
 addEventListener('keydown', e => { if (e.key === 'Escape' && !(e.target.matches && e.target.matches('input,textarea'))) navBack(); });
-$('#backB').addEventListener('click', navBack);
+$('#backB').addEventListener('click', () => { if (S.p) go(null); else navBack(); });
 
 /* ======================================================================
    tapping the 3D
@@ -551,14 +556,12 @@ canvas.addEventListener('pointerup', e => {
     const h = ray.intersectObjects(objs); if (h.length) { const id = owner.get(h[0].object); if (POP && POP.id === id) closePop(); else openPop({ kind: 'proj', id, pos: h[0].point.toArray() }); } else closePop(); return;
   }
   Object.keys(p.areas).forEach(k => (PARTS[k] || []).forEach(m => { if (isShown(m)) { m.userData.ak = k; objs.push(m); } })); const h = ray.intersectObjects(objs);
-  if (h.length) focusArea(h[0].object.userData.ak, true, h[0].point.toArray()); else if (S.area) focusArea(S.area); else closePop();
+  if (h.length) focusArea(h[0].object.userData.ak);
 });
-function focusArea(k, fromMap, at) {
-  const p = cur(); if (!p) return;
-  if (S.area === k && fromMap && POP && POP.k === k) { S.area = null; POP = null; popEl.classList.remove('on'); }
-  else if (S.area === k && !fromMap) { S.area = null; POP = null; popEl.classList.remove('on'); }
-  else { S.area = k; if (fromMap) { POP = { kind: 'area', k, pos: at || areaPos(k) }; } }
-  buzz(8); flyTo(S.area ? (AREACAM[S.area] || CAM[viewOf(p)]) : CAM[viewOf(p)]); buildTags(); highlight(); render(); drawPop(); arm();
+function focusArea(k) {
+  const p = cur(); if (!p) return; POP = null; popEl.classList.remove('on');
+  S.area = S.area === k ? null : k;
+  buzz(8); flyTo(S.area ? (AREACAM[S.area] || CAM[viewOf(p)]) : CAM[viewOf(p)]); buildTags(); highlight(); render(); if (S.area) arm();
 }
 function go(id, tab = 'needs') {
   const q = id ? P(id) : null; if (q && q.home !== S.home) S.home = q.home; if (q && q.status === 'done' && tab === 'needs') tab = 'record';
@@ -568,6 +571,7 @@ function go(id, tab = 'needs') {
 function goHome(h) { S.home = h; save(); if (S.time) { buildTime(); } go(null); }
 $('#xray').addEventListener('click', () => { if (!cur()) { toast('Open a project first — x-ray shows what’s hidden for that job'); return; } S.xray = !S.xray; S.tab = S.xray ? 'record' : (S.tab === 'record' ? 'needs' : S.tab); applyView(); render(); buzz(10); });
 $('#timeB').addEventListener('click', () => setTime(!S.time));
+$('#ghostnote').addEventListener('click', () => { if (S.xray && cur()) $('#xray').click(); });
 $('#titleSw').addEventListener('click', () => openSwitcher());
 $('#detB').addEventListener('click', () => openDetails());
 /* ======================================================================
@@ -585,17 +589,17 @@ const TABS = ['needs', 'money', 'agreed', 'record'];
 function render() {
   const p = cur(); const H0 = HOMES[S.home];
   const ae = document.activeElement; const fk = ae && ae.dataset && ae.dataset.fk && $('#sbody').contains(ae) ? ae.dataset.fk : null; const selS = fk ? ae.selectionStart : null;
-  $('#homeIc').textContent = H0.icon; $('#homeName').textContent = H0.name; $('#homeName').classList.toggle('p', !!p);
+  $('#homeIc').textContent = H0.icon; $('#homeName').textContent = H0.name; $('#homeName').classList.toggle('p', !!p); $('#titleSw').classList.toggle('inp', !!p);
   $('#crSep').style.display = p ? '' : 'none'; $('#ptitle').style.display = p ? '' : 'none'; $('#ptitle').textContent = p ? p.name : '';
-  $('#backB').style.display = (S.p || S.area || S.time || POP) ? '' : 'none';
+  $('#backB').style.display = S.p ? '' : 'none'; $('#backB').setAttribute('aria-label', `Back to ${H0.name}`); $('#backT').textContent = H0.name;
   $('#xray').style.display = p ? '' : 'none'; $('#timeB').style.display = p ? 'none' : '';
-  $('#areachip').classList.toggle('on', !!(p && S.area)); $('#areachip').innerHTML = p && S.area ? `<button id="clrA">📍 Only ${esc(p.areas[S.area])} · show all ✕</button>` : '';
-  if ($('#clrA')) $('#clrA').addEventListener('click', () => { POP = null; popEl.classList.remove('on'); focusArea(S.area); });
+  $('#areachip').classList.toggle('on', !!(p && S.area)); $('#areachip').innerHTML = p && S.area ? `<span>📍 Showing only <b>${esc(p.areas[S.area])}</b></span><button id="clrA">Show everything</button>` : '';
+  if ($('#clrA')) $('#clrA').addEventListener('click', () => focusArea(S.area));
   const B = $('#sbody');
   if (!p) {
     const L = projOf(S.home); const open = L.reduce((s, q) => s + (q.status === 'done' ? 0 : q.needs.length), 0);
     $('#where').textContent = H0.kind;
-    $('#scope').textContent = open ? `${open} thing${open === 1 ? '' : 's'} need${open === 1 ? 's' : ''} you` : 'All caught up';
+    $('#scope').textContent = H0.name;
     $('#scopeSub').textContent = L.length ? `${L.filter(q => q.status === 'active').length} in progress · ${L.filter(q => q.status === 'planned').length} planned · ${L.filter(q => q.status === 'done').length} done` : 'No projects yet';
     $('#detB').style.display = 'none'; $('#stepper').innerHTML = ''; $('#four').style.display = L.length ? '' : 'none'; $('#four').classList.add('three');
     if (S.time) S.htab = 'years'; const ht = S.htab || 'week'; const ev = events(S.home);
@@ -615,7 +619,7 @@ function render() {
   $('#detB').style.display = ''; $('#four').style.display = ''; $('#four').classList.remove('three');
   const stepI = Math.min(p.here, p.stops.length - 1);
   $('#where').textContent = p.status === 'done' ? `Finished ${p.year} · ${p.where}` : p.status === 'planned' ? `Planned ${p.year} · ${p.where}` : `Step ${stepI + 1} of ${p.stops.length} · ${p.where}`;
-  $('#scope').textContent = S.area ? p.areas[S.area] : p.name; $('#scopeSub').textContent = S.area ? p.name : `${THINGS[p.thing].place} · ${THINGS[p.thing].name}${p.status === 'done' ? ' · finished ' + p.year : ''}`;
+  $('#scope').textContent = p.name; $('#scopeSub').textContent = `${THINGS[p.thing].place} · ${THINGS[p.thing].name}${p.status === 'done' ? ' · finished ' + p.year : ''}`;
   const n = p.stops.length; const fillTo = p.status === 'done' ? 1 : n > 1 ? Math.min(p.here, n - 1) / (n - 1) : 0;
   $('#stepper').innerHTML = `<div class="stp"><div class="fl" style="width:calc((100% - 10px) * ${fillTo})"></div>${p.stops.map((s, i) => { const st = p.status === 'done' || i < p.here ? 'd' : i === p.here && p.status === 'active' ? 'h' : i === p.here ? 'h' : ''; return `<button class="${st}" data-st="${i}" aria-label="Step ${i + 1}: ${esc(s)}${st === 'h' ? ' (you are here)' : st === 'd' ? ' (done)' : ''}"><i></i><span>${esc(s)}</span></button>`; }).join('')}</div>`;
   $('#stepper').querySelectorAll('[data-st]').forEach(b => b.addEventListener('click', () => openStep(p, +b.dataset.st)));
@@ -1150,7 +1154,7 @@ $('#fab').addEventListener('click', () => openAdd({ proj: S.p, area: S.area }));
 function modal(html, fn) { $('#mcard').innerHTML = html; if (!modalOpen) { modalOpen = true; arm(); } $('#modal').classList.add('show'); fn && fn(); }
 function closeModal() { modalOpen = false; $('#modal').classList.remove('show'); }
 $('#modal').addEventListener('click', e => { if (e.target.id === 'modal') closeModal(); });
-let tt; function toast(msg, undo) { const t = $('#toast'); const over = $('#full').classList.contains('show') || modalOpen || sheetState === 'full' || !$('#reno').classList.contains('on'); t.style.setProperty('bottom', over ? '20px' : `calc(var(--shpx) + 14px)`, 'important'); t.innerHTML = `<span>${esc(msg)}</span>${undo ? '<button id="un">Undo</button>' : ''}`; t.classList.add('show'); if (undo) $('#un').addEventListener('click', () => { undo(); t.classList.remove('show'); }); clearTimeout(tt); tt = setTimeout(() => t.classList.remove('show'), 4500); }
+let tt; function toast(msg, undo) { const t = $('#toast'); const over = $('#full').classList.contains('show') || modalOpen || sheetState === 'full' || !$('#reno').classList.contains('on'); t.style.setProperty('bottom', over ? '20px' : `calc(var(--shpx) + 14px)`, 'important'); t.innerHTML = `<span>${esc(msg)}</span>${undo ? '<button id="un">Undo</button>' : ''}`; t.classList.add('show'); $('#ghostnote').style.opacity = 0; if (undo) $('#un').addEventListener('click', () => { undo(); t.classList.remove('show'); $('#ghostnote').style.opacity = ''; }); clearTimeout(tt); tt = setTimeout(() => { t.classList.remove('show'); $('#ghostnote').style.opacity = ''; }, 4500); }
 function route() { const h = location.hash === '#journeys' ? 'ten' : 'reno'; $('#reno').classList.toggle('on', h === 'reno'); $('#ten').classList.toggle('on', h === 'ten'); $('#t1').classList.toggle('on', h === 'reno'); $('#t2').classList.toggle('on', h === 'ten'); if (h === 'reno') { setSheet(sheetState, true); resize(); } }
 addEventListener('hashchange', route);
 function frame() {
