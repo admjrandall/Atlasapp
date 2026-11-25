@@ -498,10 +498,12 @@ function applyView() {
 }
 let fly = null;
 function flyTo(c, d = 1.1) { const t1 = new THREE.Vector3(...c[1]); const off = new THREE.Vector3(...c[0]).sub(t1); off.multiplyScalar(camera.aspect > 1.2 ? 1.22 : clamp(.72 / Math.max(.3, camera.aspect), 1, 1.75)); fly = { p0: camera.position.clone(), t0: controls.target.clone(), p1: t1.clone().add(off), t1, s: performance.now(), d: d * 1000 }; }
+const VO = { cur: null, tgt: 0 };
+function viewOffTarget() { const R = $('#map').getBoundingClientRect().height; const top = $('.hd').offsetHeight - 6; const sh = sheetState === 'peek' ? sheetH('peek') : Math.min(sheetH('half'), R * .62); return (sh - top) / 2; }
+function applyVO(v) { const r = $('#map').getBoundingClientRect(); camera.setViewOffset(r.width, r.height, 0, v, r.width, r.height); camera.updateProjectionMatrix(); }
 function resize() {
   const r = $('#map').getBoundingClientRect(); if (!r.width) return; renderer.setSize(r.width, r.height, false); camera.aspect = r.width / r.height; camera.fov = r.width < r.height ? 46 : 36;
-  const top = $('.hd').offsetHeight - 6; const sh = Math.min($('#sheet').offsetHeight, r.height * .62);
-  camera.setViewOffset(r.width, r.height, 0, (sh - top) / 2, r.width, r.height); camera.updateProjectionMatrix();
+  VO.tgt = viewOffTarget(); if (VO.cur == null) VO.cur = VO.tgt; applyVO(VO.cur);
   document.documentElement.style.setProperty('--shpx', $('#sheet').offsetHeight + 'px');
 }
 addEventListener('resize', () => { setSheet(sheetState, true); resize(); }); new ResizeObserver(resize).observe($('#sheet')); new ResizeObserver(resize).observe($('.hd'));
@@ -510,22 +512,27 @@ addEventListener('resize', () => { setSheet(sheetState, true); resize(); }); new
    bottom card: peek · half · full (drag or tap the handle) — same on every screen
    ====================================================================== */
 let sheetState = 'half';
-function sheetH(st) { const R = $('#reno').getBoundingClientRect().height; const peek = $('#grabzone').offsetHeight + $('#shead').offsetHeight + $('#stepper').offsetHeight + ($('#areachip').classList.contains('on') ? $('#areachip').offsetHeight : 0) + ($('#four').style.display === 'none' ? 0 : $('#four').offsetHeight) + 6; return st === 'peek' ? peek : st === 'full' ? R - $('.bar').offsetHeight - 18 : Math.round(R * (R > 760 ? .46 : .5)); }
-function setSheet(st, quiet) { sheetState = st; $('#sheet').style.setProperty('--sh', sheetH(st) + 'px'); $('#sheet').dataset.st = st; $('#ghostnote').style.visibility = st === 'full' ? 'hidden' : ''; $('#grabzone').setAttribute('aria-label', st === 'full' ? 'Show the map' : 'Make the card bigger'); if (!quiet) buzz(6); }
-(() => { let y0 = 0, h0 = 0, moved = false, t0 = 0, dragging = false; const sh = $('#sheet');
-  const start = e => { if (e.target.closest('button')) return; dragging = true; moved = false; y0 = e.clientY; h0 = sh.offsetHeight; t0 = performance.now(); sh.classList.add('drag'); e.currentTarget.setPointerCapture(e.pointerId); };
-  const move = e => { if (!dragging) return; const dy = e.clientY - y0; if (Math.abs(dy) > 4) moved = true; const R = $('#reno').getBoundingClientRect().height; sh.style.setProperty('--sh', clamp(h0 - dy, sheetH('peek'), sheetH('full')) + 'px'); };
-  const end = e => { if (!dragging) return; dragging = false; sh.classList.remove('drag'); if (!moved) { if (e.currentTarget.id === 'grabzone') setSheet(sheetState === 'peek' ? 'half' : sheetState === 'half' ? 'full' : 'half'); else if (sheetState === 'peek') setSheet('half'); return; } const h = sh.offsetHeight, v = (e.clientY - y0) / Math.max(1, performance.now() - t0); let best = ['peek', 'half', 'full'].map(s => [s, Math.abs(sheetH(s) - h)]).sort((a, b) => a[1] - b[1])[0][0]; if (v > .6) best = sheetState === 'full' ? 'half' : 'peek'; if (v < -.6) best = sheetState === 'peek' ? 'half' : 'full'; setSheet(best); };
-  ['grabzone', 'shead', 'stepper'].forEach(id => { const el = $('#' + id); el.addEventListener('pointerdown', start); el.addEventListener('pointermove', move); el.addEventListener('pointerup', end); el.addEventListener('pointercancel', end); });
+function sheetH(st) { const R = $('#reno').getBoundingClientRect().height; const peek = $('#grabzone').offsetHeight + $('#shead').offsetHeight + $('#stepper').offsetHeight + ($('#areachip').classList.contains('on') ? $('#areachip').offsetHeight : 0) + ($('#four').style.display === 'none' ? 0 : $('#four').offsetHeight) + 6; return st === 'peek' ? peek : st === 'full' ? R : Math.round(R * (R > 760 ? .46 : .5)); }
+function setSheet(st, quiet) { sheetState = st; $('#sheet').style.setProperty('--sh', sheetH(st) + 'px'); $('#sheet').dataset.st = st; $('#ghostnote').style.visibility = st === 'full' ? 'hidden' : ''; $('#grabzone').setAttribute('aria-label', st === 'full' ? 'Show the map' : 'Make the card bigger'); VO.tgt = viewOffTarget(); if (st === 'full') arm(); if (!quiet) buzz(6); }
+(() => { const sh = $('#sheet'); let st = null;
+  const begin = (e, lazy) => { if (e.button > 0) return; if (!lazy && e.target.closest('button')) return; if (lazy && (sheetState === 'full' || e.target.closest('input,select,textarea,.ba'))) return; st = { y0: e.clientY, h0: sh.offsetHeight, t0: performance.now(), moved: false, lazy, id: e.pointerId, el: e.currentTarget, cap: false }; if (!lazy) { st.cap = true; sh.classList.add('drag'); e.currentTarget.setPointerCapture(e.pointerId); } };
+  const move = e => { if (!st) return; const dy = e.clientY - st.y0; if (Math.abs(dy) > 6) st.moved = true; if (!st.moved) return; if (!st.cap) { st.cap = true; sh.classList.add('drag'); try { st.el.setPointerCapture(st.id); } catch (x) {} } sh.style.setProperty('--sh', clamp(st.h0 - dy, sheetH('peek'), sheetH('full')) + 'px'); };
+  const end = e => { if (!st) return; const s = st; st = null; sh.classList.remove('drag');
+    if (!s.moved) { if (s.lazy) return; if (s.el.id === 'grabzone') setSheet(sheetState === 'peek' ? 'half' : sheetState === 'half' ? 'full' : 'half'); else if (sheetState === 'peek') setSheet('half'); return; }
+    if (s.lazy) { const kill = ev => { ev.stopPropagation(); ev.preventDefault(); }; addEventListener('click', kill, { capture: true, once: true }); setTimeout(() => removeEventListener('click', kill, { capture: true }), 60); }
+    const h = sh.offsetHeight, v = (e.clientY - s.y0) / Math.max(1, performance.now() - s.t0); let best = ['peek', 'half', 'full'].map(x => [x, Math.abs(sheetH(x) - h)]).sort((a, b) => a[1] - b[1])[0][0]; if (v > .5) best = sheetState === 'full' ? 'half' : 'peek'; if (v < -.5) best = sheetState === 'peek' ? 'half' : 'full'; setSheet(best); };
+  [['grabzone', 0], ['shead', 0], ['stepper', 0], ['four', 1], ['areachip', 1], ['sbody', 1]].forEach(([id, lazy]) => { const el = $('#' + id); el.addEventListener('pointerdown', e => begin(e, !!lazy)); el.addEventListener('pointermove', move); el.addEventListener('pointerup', end); el.addEventListener('pointercancel', end); });
+  $('#sbody').addEventListener('wheel', e => { if (sheetState !== 'full' && e.deltaY > 4) { e.preventDefault(); setSheet('full'); } }, { passive: false });
+  $('#mapB').addEventListener('click', () => setSheet('half'));
 })();
 
 /* ======================================================================
    navigation + back (header ←, Escape, phone back)
    ====================================================================== */
 let modalOpen = false; const fullStack = []; let armed = false;
-function depth() { return (modalOpen ? 1 : 0) + fullStack.length + (POP ? 1 : 0) + (S.time ? 1 : 0) + (S.area ? 1 : 0) + (S.p ? 1 : 0); }
+function depth() { return (modalOpen ? 1 : 0) + fullStack.length + (POP ? 1 : 0) + (sheetState === 'full' ? 1 : 0) + (S.time ? 1 : 0) + (S.area ? 1 : 0) + (S.p ? 1 : 0); }
 function arm() { try { if (depth() > 0 && !armed) { history.pushState({ atlas: 1 }, ''); armed = true; } } catch (e) {} }
-function navBack() { if (modalOpen) closeModal(); else if (fullStack.length) popFull(); else if (POP) closePop(); else if (S.time) setTime(false); else if (S.area) focusArea(S.area); else if (S.p) go(null); }
+function navBack() { if (modalOpen) closeModal(); else if (fullStack.length) popFull(); else if (POP) closePop(); else if (sheetState === 'full') setSheet('half'); else if (S.time) setTime(false); else if (S.area) focusArea(S.area); else if (S.p) go(null); }
 addEventListener('popstate', () => { armed = false; navBack(); arm(); });
 addEventListener('keydown', e => { if (e.key === 'Escape' && !(e.target.matches && e.target.matches('input,textarea'))) navBack(); });
 $('#backB').addEventListener('click', navBack);
@@ -1148,6 +1155,7 @@ function route() { const h = location.hash === '#journeys' ? 'ten' : 'reno'; $('
 addEventListener('hashchange', route);
 function frame() {
   if (fly) { const k = ease(clamp((performance.now() - fly.s) / fly.d)); camera.position.lerpVectors(fly.p0, fly.p1, k); controls.target.lerpVectors(fly.t0, fly.t1, k); if (k >= 1) fly = null; }
+  if (VO.cur != null && Math.abs(VO.cur - VO.tgt) > .5) { VO.cur += (VO.tgt - VO.cur) * .14; applyVO(VO.cur); }
   controls.update(); glowMat.opacity = .55 + Math.sin(performance.now() / 300) * .35;
   placeAll(); renderer.render(scene, camera); requestAnimationFrame(frame);
 }

@@ -9,6 +9,7 @@ function route() { const h = location.hash === '#journeys' ? 'ten' : 'reno'; $('
 addEventListener('hashchange', route);
 function frame() {
   if (fly) { const k = ease(clamp((performance.now() - fly.s) / fly.d)); camera.position.lerpVectors(fly.p0, fly.p1, k); controls.target.lerpVectors(fly.t0, fly.t1, k); if (k >= 1) fly = null; }
+  if (VO.cur != null && Math.abs(VO.cur - VO.tgt) > .5) { VO.cur += (VO.tgt - VO.cur) * .14; applyVO(VO.cur); }
   controls.update(); glowMat.opacity = .55 + Math.sin(performance.now() / 300) * .35;
   placeAll(); renderer.render(scene, camera); requestAnimationFrame(frame);
 }

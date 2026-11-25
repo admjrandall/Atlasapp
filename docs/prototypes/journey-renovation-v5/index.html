@@ -459,6 +459,11 @@ input::placeholder,textarea::placeholder{color:#8d86a3}
 .homelist .here{font-size:11.5px;font-weight:800;color:var(--v);background:var(--v2);padding:3px 8px;border-radius:10px}
 .homelist .go{color:#9b93b3;font-size:20px}
 .homelist button.on b{color:var(--v)}
+.mapb{display:none;width:36px;height:36px;border-radius:18px;background:#f2eff8;color:var(--ink);font-size:20px;line-height:1;flex:none}
+.sheet[data-st=full] .mapb{display:grid;place-items:center}
+.sheet[data-st=full]{border-radius:0;box-shadow:none}
+.sheet:not([data-st=full]) .sbody{overflow:hidden;touch-action:none}
+.sheet.drag{transition:none!important}
 .timebar .yr .xb{width:28px;height:28px}
 .timebar .ticks i{cursor:pointer}
 .timebar .ticks i.now{background:var(--v);width:10px;height:10px;top:1px;margin-left:-5px;border-radius:5px}
@@ -491,7 +496,7 @@ input::placeholder,textarea::placeholder{color:#8d86a3}
   </div>
   <div class="sheet" id="sheet">
     <div class="grabzone" id="grabzone" title="Drag, or tap to resize"><div class="grab"></div></div>
-    <div class="shead" id="shead"><div class="t"><b id="scope">Whole house</b><small id="scopeSub"></small></div><button class="pill2" id="detB">Details</button><button class="fab" id="fab" aria-label="Add">＋</button></div>
+    <div class="shead" id="shead"><button class="mapb" id="mapB" aria-label="Back to the map">⌄</button><div class="t"><b id="scope">Whole house</b><small id="scopeSub"></small></div><button class="pill2" id="detB">Details</button><button class="fab" id="fab" aria-label="Add">＋</button></div>
     <div class="stepper" id="stepper"></div>
     <div class="areachip" id="areachip"></div>
     <div class="four" id="four"></div>
