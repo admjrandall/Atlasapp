@@ -19,15 +19,16 @@ function render() {
     $('#scope').textContent = H0.name;
     $('#scopeSub').textContent = L.length ? `${L.filter(q => q.status === 'active').length} in progress · ${L.filter(q => q.status === 'planned').length} planned · ${L.filter(q => q.status === 'done').length} done` : 'No projects yet';
     $('#detB').style.display = 'none'; $('#stepper').innerHTML = ''; $('#four').style.display = L.length ? '' : 'none'; $('#four').classList.add('three');
+    if (S.shaping === S.home) { $('#four').style.display = 'none'; $('#scope').textContent = 'Shape your house'; $('#scopeSub').textContent = 'Match it roughly — the model updates as you go'; B.innerHTML = shapeHTML(S.home); bindShape(B, S.home); return; }
     if (S.time) S.htab = 'years'; const ht = S.htab || 'week'; const ev = events(S.home);
     $('#four').innerHTML = [['week', 'Needs you', open ? `${open} open` : 'All clear', open], ['all', 'Projects', `${L.length} total`, 0], ['years', 'Over the years', `${ev.length} events`, 0]].map(([k, l, v, c]) => `<button class="${ht === k ? 'on' : ''}" data-hk="${k}" aria-pressed="${ht === k}"><b>${l}</b><span class="${c ? 'am' : ''}">${v}</span></button>`).join('');
     $('#four').querySelectorAll('[data-hk]').forEach(x => x.addEventListener('click', () => { S.htab = x.dataset.hk; if (S.time && S.htab !== 'years') setTime(false); else render(); $('#sbody').scrollTop = 0; if (sheetState === 'peek') setSheet('half'); }));
-    const ask = `<div class="ask2"><button id="askB">✦ Ask your house — “what colour is the trim?”</button></div>`;
+    const cst = H0.model === 'custom'; const ask = `<div class="ask2"><button id="askB">✦ Ask your house — “what colour is the trim?”</button></div><div class="hrow"><button id="rvB">${H0.photo ? `<img src="${H0.photo}" alt="">` : '<span class="ph">📷</span>'}<span><b>Real view</b><small>${H0.photo ? 'Try colours on your photo' : 'Add a photo of your house'}</small></span></button>${cst ? `<button id="shB"><span class="ph">🏠</span><span><b>Edit shape</b><small>Stories, roof, garage</small></span></button>` : ''}</div>`;
     if (!L.length) B.innerHTML = ask + `<div class="empty"><b>Nothing here yet</b>Start a renovation, or log one you’ve already done.<div class="row" style="justify-content:center"><button class="btn" data-new="planned">＋ New renovation</button><button class="btn g" data-new="done">Log a past one</button></div></div>`;
     else if (ht === 'week') B.innerHTML = ask + weekHTML(L);
     else if (ht === 'all') B.innerHTML = ask + `<div class="lh"><div class="k">${L.length} PROJECT${L.length === 1 ? '' : 'S'} AT ${esc(H0.name.toUpperCase())}</div><button class="addb" data-newm="1">＋ New</button></div>${newMenuHTML()}` + groupsHTML(L);
     else B.innerHTML = (S.time ? '' : `<div class="row" style="margin:0 0 10px"><button class="btn" id="tmOn" style="flex:1">🕓 Show it on the house</button></div>`) + timeListHTML();
-    bindList(B); bindNewMenu(B); const ab = $('#askB'); if (ab) ab.addEventListener('click', () => openSwitcher(true));
+    bindList(B); bindNewMenu(B); const rv = $('#rvB'); if (rv) rv.addEventListener('click', () => { if (!H0.photo) { photoPrompt(S.home); return; } openRealView(S.home, H0.photo && Object.values(H0.marks || {}).some(l => l.length) ? 'colour' : 'mark'); }); const sb = $('#shB'); if (sb) sb.addEventListener('click', () => { S.shaping = S.home; arm(); render(); if (sheetState === 'peek') setSheet('half'); }); const ab = $('#askB'); if (ab) ab.addEventListener('click', () => openSwitcher(true));
     const to = $('#tmOn'); if (to) to.addEventListener('click', () => setTime(true));
     bindWeek(B); B.querySelectorAll('[data-yr]').forEach(x => x.addEventListener('click', () => jumpYear(+x.dataset.yr)));
     return;
@@ -292,7 +293,7 @@ function openSwitcher(focusAsk) {
     $('#swQ').addEventListener('input', draw); $('#swQ').addEventListener('keydown', e => { if (e.key === 'Enter') $('#swQ').blur(); });
     $('#swHome').addEventListener('click', () => { const hl = $('#swHL'); hl.hidden = !hl.hidden; $('#swHome').setAttribute('aria-expanded', !hl.hidden); $('#swHome').classList.toggle('open', !hl.hidden); });
     $('#swHL').querySelectorAll('[data-h]').forEach(x => x.addEventListener('click', () => goHome(x.dataset.h)));
-    $('#swHL').querySelector('[data-addh]').addEventListener('click', addHome);
+    $('#swHL').querySelector('[data-addh]').addEventListener('click', openFindHome);
     bindNewMenu($('#swTop'));
     $('#rst').addEventListener('click', () => modal(`<h3>Reset the demo?</h3><p class="mini" style="margin:0">Everything you added or changed in this mockup goes back to the example data.</p><div class="row"><button class="btn danger" id="rY">Reset</button><button class="btn g" id="cx">Cancel</button></div>`, () => { $('#rY').addEventListener('click', resetDemo); $('#cx').addEventListener('click', closeModal); }));
     draw(); if (focusAsk) setTimeout(() => $('#swQ')?.focus(), 80);

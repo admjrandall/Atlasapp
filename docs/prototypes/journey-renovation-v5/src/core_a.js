@@ -4,7 +4,7 @@
    ====================================================================== */
 const AREA_TAG = { sFront: [0, 2.6, 3.4], sLeft: [-4.5, 2.6, 0], sBack: [0, 2.6, -3.4], sGarage: [7.9, 2.2, -.5], bath: [2.6, 1.6, 1.8] };
 const PROJ_TAG = { kitchen: [2.6, FY + H + 2.3, -.6], roof: [-1.2, FY + H + 2.4, .6], siding: [-4.5, 1.8, 1.8], yard: [0, 1.1, -6.6], heater: [6.75, 3.3, -2.35], deck: [0, 2.4, 4.4], stove: [1.3, 7.0, -2.4], paint: [4, FL * 3 + 2.4, 0] };
-const areaPos = k => AREA_TAG[k] || TAGPOS[k] || [0, 2, 0];
+const areaPos = k => { const c = custOf(S.home); if (c) return c.tag[k] || [0, 2, 0]; return AREA_TAG[k] || TAGPOS[k] || [0, 2, 0]; };
 function projPos(q) { if (PROJ_TAG[q.id]) return PROJ_TAG[q.id]; const k = Object.keys(q.areas)[0]; const p = areaPos(k).slice(); p[1] += .6; return p; }
 const tagsEl = $('#tags'); let tagEls = [], pinEls = [];
 function mk(cls, html, fn, label) { const el = document.createElement('button'); el.className = cls; el.innerHTML = html; if (label) el.setAttribute('aria-label', label); el.addEventListener('click', e => { e.stopPropagation(); fn(); }); tagsEl.appendChild(el); return el; }
@@ -82,6 +82,7 @@ function applyLook() {
   setM(mats.siding, { color: sc }); setM(mats.trim, { color: tc });
   FENCE.forEach(f => f.visible = !mainH || y >= 2019);
   const pat = pid === 'yard' || (timeOn && yardP && y >= effYear(yardP)); patio.visible = patioEdge.visible = !!pat;
+  if (custOf(S.home)) setCustomColors(S.home);
   const gn = $('#ghostnote'); let note = '';
   const XT = { rooms: 'inside the walls — wiring, pipes, studs', roof: 'the roof deck under the shingles', siding: 'the sheathing under the siding', yard: 'buried lines under the yard', deck: 'the footings', item: 'what’s behind it', condo: 'inside the walls' };
   if (S.xray && p) note = `X-ray: ${XT[p.view] || 'what’s hidden'} · tap to turn off`;
@@ -120,7 +121,7 @@ const CAM = { main: [[16, 15, 21], [1, .5, -1.5]], cabin: [[13, 9, 17], [0, 2.4,
 const AREACAM = { kitchen: [[6, 9, 7], [2, 0, -1.2]], living: [[-6, 9, 9], [-2, 0, 1.2]], entry: [[3, 8, 9], [.7, 0, 1.7]], bath: [[5, 8, 8], [2.6, 0, 1.8]], front: [[-4, 9, 14], [-.5, 3.4, 1.5]], back: [[-4, 10, -13], [-.5, 3.4, -1.5]], garageRoof: [[12, 9, 6], [5.8, 3, -.5]], chimney: [[-8, 9, -9], [-2.4, 4.4, -1.6]], sFront: [[-3, 3.5, 12], [0, 1.6, 3]], sLeft: [[-12, 3.5, 2], [-4, 1.6, 0]], sBack: [[-3, 4, -12], [0, 1.6, -3]], sGarage: [[13, 3.5, 3], [7.5, 1.4, -.5]], patio: [[6, 7, -15], [0, 0, -5.6]], beds: [[4, 6, -3], [0, 0, -9.6]], drain: [[-3, 6, -14], [-9.8, 0, -6]], lawn: [[11, 6, -11], [4.5, 0, -7.2]], wh: [[6.5, 2.9, 5.2], [6.75, 1.1, -2.35]], deck: [[7, 5, 12], [0, 1, 4]], stairs: [[9, 4, 9], [5.2, .6, 4.6]], stove: [[6, 9, 4], [1.3, 5.2, -2.4]], unit: [[10, 14, 9], [4, 8, 0]] };
 function viewOf(p) { if (!p) return modelOf(S.home); return p.view === 'condo' ? 'condoUnit' : p.view; }
 function applyView() {
-  const mo = modelOf(S.home); mainRoot.visible = mo === 'main'; cabinRoot.visible = mo === 'cabin'; condoRoot.visible = mo === 'condo';
+  const mo = modelOf(S.home); mainRoot.visible = mo === 'main'; cabinRoot.visible = mo === 'cabin'; condoRoot.visible = mo === 'condo'; Object.entries(CUST).forEach(([k, c]) => c.g.visible = mo === 'custom' && k === S.home); const big = mo === 'custom'; controls.maxDistance = big ? 95 : 42; scene.fog.near = big ? 80 : 38; scene.fog.far = big ? 170 : 70; camera.far = big ? 400 : 200; camera.updateProjectionMatrix(); sun.shadow.camera.left = sun.shadow.camera.bottom = big ? -24 : -14; sun.shadow.camera.right = sun.shadow.camera.top = big ? 24 : 14; sun.shadow.camera.updateProjectionMatrix(); if (mo === 'custom' && !CUST[S.home]) { buildCustom(S.home); CUST[S.home].g.visible = true; }
   const p = cur(); const v = p ? p.view : 'home'; const cut = v === 'rooms';
   extWalls.scale.y = inWalls.scale.y = cut ? 1.15 / H : 1;
   roof.visible = !cut; wins.visible = !cut; porch.children[porch.children.length - 1].visible = !cut;
@@ -169,9 +170,9 @@ function setSheet(st, quiet) { sheetState = st; $('#sheet').style.setProperty('-
    navigation + back (header ←, Escape, phone back)
    ====================================================================== */
 let modalOpen = false; const fullStack = []; let armed = false;
-function depth() { return (modalOpen ? 1 : 0) + fullStack.length + (POP ? 1 : 0) + (sheetState === 'full' ? 1 : 0) + (S.time ? 1 : 0) + (S.area ? 1 : 0) + (S.p ? 1 : 0); }
+function depth() { return (S.shaping ? 1 : 0) + (modalOpen ? 1 : 0) + fullStack.length + (POP ? 1 : 0) + (sheetState === 'full' ? 1 : 0) + (S.time ? 1 : 0) + (S.area ? 1 : 0) + (S.p ? 1 : 0); }
 function arm() { try { if (depth() > 0 && !armed) { history.pushState({ atlas: 1 }, ''); armed = true; } } catch (e) {} }
-function navBack() { if (modalOpen) closeModal(); else if (fullStack.length) popFull(); else if (POP) closePop(); else if (sheetState === 'full') setSheet('half'); else if (S.time) setTime(false); else if (S.area) focusArea(S.area); else if (S.p) go(null); }
+function navBack() { if (modalOpen) closeModal(); else if (fullStack.length) popFull(); else if (POP) closePop(); else if (S.shaping) { S.shaping = null; render(); } else if (sheetState === 'full') setSheet('half'); else if (S.time) setTime(false); else if (S.area) focusArea(S.area); else if (S.p) go(null); }
 addEventListener('popstate', () => { armed = false; navBack(); arm(); });
 addEventListener('keydown', e => { if (e.key === 'Escape' && !(e.target.matches && e.target.matches('input,textarea'))) navBack(); });
 $('#backB').addEventListener('click', () => { if (S.p) go(null); else navBack(); });
@@ -195,12 +196,12 @@ canvas.addEventListener('pointerup', e => {
 function focusArea(k) {
   const p = cur(); if (!p) return; POP = null; popEl.classList.remove('on');
   S.area = S.area === k ? null : k;
-  buzz(8); flyTo(S.area ? (AREACAM[S.area] || CAM[viewOf(p)]) : CAM[viewOf(p)]); buildTags(); highlight(); render(); if (S.area) arm();
+  buzz(8); flyTo(S.area ? (areaCam(S.area) || camOf(viewOf(p))) : camOf(viewOf(p))); buildTags(); highlight(); render(); if (S.area) arm();
 }
 function go(id, tab = 'needs') {
   const q = id ? P(id) : null; if (q && q.home !== S.home) S.home = q.home; if (q && q.status === 'done' && tab === 'needs') tab = 'record';
   POP = null; popEl.classList.remove('on'); if (id && S.time) { S.time = false; S.year = null; buildTime(); }
-  S.p = id; S.area = null; S.tab = tab; S.xray = tab === 'record'; buzz(10); applyView(); flyTo(CAM[viewOf(cur())], 1.3); buildTags(); while (fullStack.length) popFull(true); render(); if (sheetState === 'full' || sheetState === 'peek') setSheet('half', true); else setSheet('half', true); arm();
+  S.p = id; S.area = null; S.tab = tab; S.xray = tab === 'record'; buzz(10); applyView(); flyTo(camOf(viewOf(cur())), 1.3); buildTags(); while (fullStack.length) popFull(true); render(); if (sheetState === 'full' || sheetState === 'peek') setSheet('half', true); else setSheet('half', true); arm();
 }
 function goHome(h) { S.home = h; save(); if (S.time) { buildTime(); } go(null); }
 $('#xray').addEventListener('click', () => { if (!cur()) { toast('Open a project first — x-ray shows what’s hidden for that job'); return; } S.xray = !S.xray; S.tab = S.xray ? 'record' : (S.tab === 'record' ? 'needs' : S.tab); applyView(); render(); buzz(10); });

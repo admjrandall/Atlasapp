@@ -53,7 +53,7 @@ function openAdd(opts = {}) {
     else if (res.kind === 'agreed') { const written = !!res.who || /text|email/i.test(text); const a = { area, ok: written, id: 'a' + Date.now(), t: title + (res.date && !title.includes(res.date) ? ` (${res.date})` : ''), s: written ? `${res.who || 'Shared message'} · in writing · just now` : 'Said, not written down yet', draft: `Hi — confirming: ${title}. Could you reply to confirm? Thanks!`, to: res.who || 'them' }; q.agreed.unshift(a); undo = () => q.agreed = q.agreed.filter(x => x !== a); tab = 'agreed'; msg = `Saved to ${q.name} · Agreed`; }
     else if (res.kind === 'photo') { const k = area || Object.keys(q.areas)[0]; const pos = areaPos(k).slice(); pos[0] += (Math.random() - .5) * 1.4; pos[1] += (Math.random() - .5) * .6; const ph = { area: k, t: title, d: 'Added just now', pos, src: photo }; q.photos.push(ph); undo = () => q.photos = q.photos.filter(x => x !== ph); tab = 'record'; msg = `Photo pinned to ${q.areas[k] || q.name}`; }
     else { const n = { t: title, s: 'You · just now' }; q.notes.push(n); undo = () => q.notes = q.notes.filter(x => x !== n); tab = 'record'; msg = `Note added to ${q.name}`; }
-    buzz([10, 20]); while (fullStack.length) popFull(true); go(q.id, tab); if (area) { S.area = area; flyTo(AREACAM[area] || CAM[viewOf(q)]); buildTags(); highlight(); render(); } changed(msg, undo);
+    buzz([10, 20]); while (fullStack.length) popFull(true); go(q.id, tab); if (area) { S.area = area; flyTo(areaCam(area) || camOf(viewOf(q))); buildTags(); highlight(); render(); } changed(msg, undo);
   };
   full('Add anything', draw);
   if (opts.photo) setTimeout(() => $('#aPh').click(), 120);
