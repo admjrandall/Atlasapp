@@ -1,0 +1,7 @@
+/* ======================================================================
+   money
+   ====================================================================== */
+function moneyOf(p) { const cost = p.lines.filter(l => l.v > 0).reduce((s, l) => s + l.v, 0); const covered = -p.lines.filter(l => l.v < 0).reduce((s, l) => s + l.v, 0); return { cost, covered, you: cost - covered, left: p.budget - cost, budget: p.budget }; }
+const KIND = { quote: 'QUOTE', paid: 'PAID', change: 'CHANGE', insurance: 'COVERED', cost: 'COST' };
+function parseCost(t) { const m = t.match(/\$\s*([\d,]+(?:\.\d+)?)\s*(k\b)?|([\d,]{3,}(?:\.\d+)?)\s*(dollars|bucks)?/i); if (!m) return null; const num = m[1] || m[3]; let v = parseFloat(num.replace(/,/g, '')) * (m[2] ? 1000 : 1); if (!v) return null; let kind = /change/i.test(t) ? 'change' : /paid|deposit|payment|receipt/i.test(t) ? 'paid' : /quote|estimate|bid/i.test(t) ? 'quote' : /rebate|insurance|refund|credit/i.test(t) ? 'insurance' : 'cost'; if (kind === 'insurance') v = -v; let l = t.replace(m[0], ' ').replace(/\b(change order|change|paid|deposit|payment|receipt|quote|estimate|bid|rebate|refund|credit|for)\b/ig, ' ').replace(/\s+/g, ' ').trim(); const wm = l.match(/(?:,|\bto|\bfrom|\bby|\s-)\s*([A-Z][\w’']+)\s*$/); const who = wm ? wm[1] : ''; if (wm) l = l.slice(0, wm.index); l = l.replace(/[,\-–:]+\s*$/, '').trim(); return { l: l ? l[0].toUpperCase() + l.slice(1) : 'Cost', v, kind, who }; }
+
