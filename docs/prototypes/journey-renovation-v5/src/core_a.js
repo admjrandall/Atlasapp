@@ -25,10 +25,10 @@ const pv = new THREE.Vector3();
 function proj2d(pos) { pv.set(...pos).project(camera); const r = canvas.getBoundingClientRect(); return { x: (pv.x + 1) / 2 * r.width, y: (1 - pv.y) / 2 * r.height, z: pv.z, w: r.width, h: r.height }; }
 function place(el, pos) { const q = proj2d(pos); if (q.z > 1 || q.x < -40 || q.x > q.w + 40 || q.y < $('.hd').offsetHeight - 4 || q.y > q.h - sheetCover() - 8) { el.style.display = 'none'; return; } el.style.display = ''; el.style.left = q.x + 'px'; el.style.top = q.y + 'px'; }
 function sheetCover() { return $('#sheet').offsetHeight; }
-function placeAll() { tagEls.forEach(t => S.xray ? (t.el.style.display = 'none') : place(t.el, t.pos)); pinEls.forEach(t => S.xray ? place(t.el, t.pos) : (t.el.style.display = 'none')); declutter(); placePop(); }
+function placeAll() { tagEls.forEach(t => S.xray ? (t.el.style.display = 'none') : place(t.el, t.pos)); pinEls.forEach(t => S.xray ? place(t.el, t.pos) : (t.el.style.display = 'none')); declutter(); placePop(); placeHandles(); }
 function declutter() { const vis = tagEls.filter(t => t.el.style.display !== 'none').map(t => ({ el: t.el, x: parseFloat(t.el.style.left), y: parseFloat(t.el.style.top), w: t.el.offsetWidth + 6, h: t.el.offsetHeight + 4 })).sort((a, b) => a.y - b.y); for (let i = 0; i < vis.length; i++) for (let j = 0; j < i; j++) { const A = vis[j], Bq = vis[i]; if (Math.abs(A.x - Bq.x) < (A.w + Bq.w) / 2 && Math.abs(A.y - Bq.y) < (A.h + Bq.h) / 2) { Bq.y = A.y + (A.h + Bq.h) / 2; } } vis.forEach(v => v.el.style.top = v.y + 'px'); }
 const glow = new THREE.Group(); scene.add(glow); const glowMat = new THREE.LineBasicMaterial({ color: 0xff9a3c, transparent: true, opacity: .9, depthTest: false });
-function highlight() { glow.clear(); const p = cur(); const keys = p ? Object.keys(p.areas).filter(k => !S.area || S.area === k) : (POP && POP.kind === 'proj' ? Object.keys(P(POP.id).areas) : []); keys.forEach(k => (PARTS[k] || []).forEach(m => { if (!isShown(m)) return; m.updateMatrixWorld(true); const e = new THREE.LineSegments(new THREE.EdgesGeometry(m.geometry, 30), glowMat); e.matrixAutoUpdate = false; e.matrix.copy(m.matrixWorld); e.renderOrder = 5; glow.add(e); })); }
+function highlight() { glow.clear(); const p = cur(); const keys = (!p && S.obj && custOf(S.home)) ? [S.obj] : p ? Object.keys(p.areas).filter(k => !S.area || S.area === k) : (POP && POP.kind === 'proj' ? Object.keys(P(POP.id).areas) : []); keys.forEach(k => (PARTS[k] || []).forEach(m => { if (!isShown(m)) return; m.updateMatrixWorld(true); const e = new THREE.LineSegments(new THREE.EdgesGeometry(m.geometry, 30), glowMat); e.matrixAutoUpdate = false; e.matrix.copy(m.matrixWorld); e.renderOrder = 5; glow.add(e); })); }
 function isShown(o) { while (o) { if (!o.visible) return false; o = o.parent; } return true; }
 
 /* popover: a small card where you tapped */
@@ -82,7 +82,7 @@ function applyLook() {
   setM(mats.siding, { color: sc }); setM(mats.trim, { color: tc });
   FENCE.forEach(f => f.visible = !mainH || y >= 2019);
   const pat = pid === 'yard' || (timeOn && yardP && y >= effYear(yardP)); patio.visible = patioEdge.visible = !!pat;
-  if (custOf(S.home)) setCustomColors(S.home);
+  if (custOf(S.home)) { setCustomColors(S.home); objVis(S.home); }
   const gn = $('#ghostnote'); let note = '';
   const XT = { rooms: 'inside the walls — wiring, pipes, studs', roof: 'the roof deck under the shingles', siding: 'the sheathing under the siding', yard: 'buried lines under the yard', deck: 'the footings', item: 'what’s behind it', condo: 'inside the walls' };
   if (S.xray && p) note = `X-ray: ${XT[p.view] || 'what’s hidden'} · tap to turn off`;
@@ -144,7 +144,7 @@ function applyVO(v) { const r = $('#map').getBoundingClientRect(); camera.setVie
 function resize() {
   const r = $('#map').getBoundingClientRect(); if (!r.width) return; renderer.setSize(r.width, r.height, false); camera.aspect = r.width / r.height; camera.fov = r.width < r.height ? 46 : 36;
   VO.tgt = viewOffTarget(); if (VO.cur == null) VO.cur = VO.tgt; applyVO(VO.cur);
-  document.documentElement.style.setProperty('--shpx', $('#sheet').offsetHeight + 'px');
+  document.documentElement.style.setProperty('--shpx', $('#sheet').offsetHeight + 'px'); document.documentElement.style.setProperty('--hdh', ($('.hd').offsetHeight + 4) + 'px');
 }
 addEventListener('resize', () => { setSheet(sheetState, true); resize(); }); new ResizeObserver(resize).observe($('#sheet')); new ResizeObserver(resize).observe($('.hd'));
 
@@ -170,9 +170,9 @@ function setSheet(st, quiet) { sheetState = st; $('#sheet').style.setProperty('-
    navigation + back (header ←, Escape, phone back)
    ====================================================================== */
 let modalOpen = false; const fullStack = []; let armed = false;
-function depth() { return (S.shaping ? 1 : 0) + (modalOpen ? 1 : 0) + fullStack.length + (POP ? 1 : 0) + (sheetState === 'full' ? 1 : 0) + (S.time ? 1 : 0) + (S.area ? 1 : 0) + (S.p ? 1 : 0); }
+function depth() { return (S.obj ? 1 : 0) + (S.plan ? 1 : 0) + (S.pick ? 1 : 0) + (modalOpen ? 1 : 0) + fullStack.length + (POP ? 1 : 0) + (sheetState === 'full' ? 1 : 0) + (S.time ? 1 : 0) + (S.area ? 1 : 0) + (S.p ? 1 : 0); }
 function arm() { try { if (depth() > 0 && !armed) { history.pushState({ atlas: 1 }, ''); armed = true; } } catch (e) {} }
-function navBack() { if (modalOpen) closeModal(); else if (fullStack.length) popFull(); else if (POP) closePop(); else if (S.shaping) { S.shaping = null; render(); } else if (sheetState === 'full') setSheet('half'); else if (S.time) setTime(false); else if (S.area) focusArea(S.area); else if (S.p) go(null); }
+function navBack() { if (modalOpen) closeModal(); else if (fullStack.length) popFull(); else if (POP) closePop(); else if (S.pick) { S.pick = false; render(); } else if (S.plan) setPlan(false); else if (S.obj) closeObj(); else if (sheetState === 'full') setSheet('half'); else if (S.time) setTime(false); else if (S.area) focusArea(S.area); else if (S.p) go(null); }
 addEventListener('popstate', () => { armed = false; navBack(); arm(); });
 addEventListener('keydown', e => { if (e.key === 'Escape' && !(e.target.matches && e.target.matches('input,textarea'))) navBack(); });
 $('#backB').addEventListener('click', () => { if (S.p) go(null); else navBack(); });
@@ -185,6 +185,7 @@ canvas.addEventListener('pointerdown', e => { down = [e.clientX, e.clientY]; fly
 canvas.addEventListener('pointerup', e => {
   if (!down || Math.hypot(e.clientX - down[0], e.clientY - down[1]) > 8) return; const r = canvas.getBoundingClientRect(); ndc.set((e.clientX - r.left) / r.width * 2 - 1, -((e.clientY - r.top) / r.height) * 2 + 1); ray.setFromCamera(ndc, camera);
   const p = cur(); const objs = [];
+  if (!p && custOf(S.home)) { if (S.plan) return; const id = pickObj(e); if (!id) { if (S.obj) closeObj(); return; } if (S.pick) { S.pick = false; } selectObj(id); return; }
   if (!p) {
     const L = projOf(S.home).sort((a, b) => (a.status === 'done') - (b.status === 'done')); const owner = new Map();
     L.forEach(q => Object.keys(q.areas).forEach(k => (PARTS[k] || []).forEach(m => { if (isShown(m) && !owner.has(m)) { owner.set(m, q.id); objs.push(m); } })));
@@ -200,7 +201,7 @@ function focusArea(k) {
 }
 function go(id, tab = 'needs') {
   const q = id ? P(id) : null; if (q && q.home !== S.home) S.home = q.home; if (q && q.status === 'done' && tab === 'needs') tab = 'record';
-  POP = null; popEl.classList.remove('on'); if (id && S.time) { S.time = false; S.year = null; buildTime(); }
+  POP = null; popEl.classList.remove('on'); S.obj = null; S.pick = false; if (S.plan) { S.plan = false; controls.enableRotate = true; controls.minPolarAngle = .25; controls.maxPolarAngle = 1.25; $('#planbar').classList.remove('on'); $('#map').classList.remove('plan'); } if (id && S.time) { S.time = false; S.year = null; buildTime(); }
   S.p = id; S.area = null; S.tab = tab; S.xray = tab === 'record'; buzz(10); applyView(); flyTo(camOf(viewOf(cur())), 1.3); buildTags(); while (fullStack.length) popFull(true); render(); if (sheetState === 'full' || sheetState === 'peek') setSheet('half', true); else setSheet('half', true); arm();
 }
 function goHome(h) { S.home = h; save(); if (S.time) { buildTime(); } go(null); }

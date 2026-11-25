@@ -55,8 +55,8 @@ function openAdd(opts = {}) {
     else { const n = { t: title, s: 'You · just now' }; q.notes.push(n); undo = () => q.notes = q.notes.filter(x => x !== n); tab = 'record'; msg = `Note added to ${q.name}`; }
     buzz([10, 20]); while (fullStack.length) popFull(true); go(q.id, tab); if (area) { S.area = area; flyTo(areaCam(area) || camOf(viewOf(q))); buildTags(); highlight(); render(); } changed(msg, undo);
   };
-  full('Add anything', draw);
+  full(opts.proj && P(opts.proj) ? `Add to ${P(opts.proj).name}` : 'Add anything', draw);
   if (opts.photo) setTimeout(() => $('#aPh').click(), 120);
 }
-$('#fab').addEventListener('click', () => openAdd({ proj: S.p, area: S.area }));
+$('#fab').addEventListener('click', () => { if (!S.p) { openNewProject(); return; } openAdd({ proj: S.p, area: S.area }); });
 

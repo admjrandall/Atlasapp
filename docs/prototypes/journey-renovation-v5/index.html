@@ -510,6 +510,32 @@ input::placeholder,textarea::placeholder{color:#8d86a3}
 .legend2{display:flex;gap:12px;flex-wrap:wrap;font-size:12px;color:var(--sub);margin-top:6px}.legend2 i{display:inline-block;width:12px;height:12px;border-radius:3px;border:1.4px solid transparent;margin-right:5px;vertical-align:-2px}
 .lnk{color:var(--v);font-weight:700;text-decoration:underline;padding:0}
 .tabs{position:relative}.ver{position:absolute;right:8px;bottom:-14px;font-size:10px;color:#9b93b3;font-weight:700}
+#handles{position:absolute;inset:0;pointer-events:none;z-index:4}
+.hd2{position:absolute;width:30px;height:30px;margin:-15px 0 0 -15px;border-radius:15px;background:#fff;border:3px solid var(--v);pointer-events:auto;box-shadow:0 2px 8px rgba(0,0,0,.25);touch-action:none;cursor:nwse-resize}
+.hd2.rs:after{content:"◢";color:var(--v);font-size:12px;line-height:24px}
+.hd2.end{background:var(--v);cursor:move}
+.meas{position:absolute;transform:translate(-50%,30%);background:rgba(29,24,48,.85);color:#fff;border-radius:10px;padding:4px 9px;font-size:12px;white-space:nowrap;text-align:center;pointer-events:none}
+.meas b{display:block;font-size:12.5px}.meas span{font-size:11px;opacity:.85}
+.planbar{display:none;position:absolute;left:50%;transform:translateX(-50%);top:calc(var(--hdh,110px));z-index:5;background:#fff;border:1px solid var(--line);border-radius:20px;padding:6px 6px 6px 14px;gap:6px;align-items:center;box-shadow:0 4px 14px rgba(30,10,80,.12);white-space:nowrap;font-size:13px}
+.planbar.on{display:flex}
+.planbar button{height:32px;padding:0 12px;border-radius:16px;background:var(--v2);color:var(--v);font-weight:700}
+.planbar #pbDone{background:var(--v);color:#fff}
+#map.plan .tag{opacity:.6}
+.obhead{display:flex;justify-content:flex-end;margin:-6px 0 4px}.obhead .btn{height:32px;font-size:13px}
+.obst{border-radius:12px;padding:8px 12px;font-size:13px;font-weight:700;margin-bottom:8px}.obst.rm{background:#f1eef6;color:var(--sub)}.obst.pl{background:var(--amb2);color:#8a4d12}
+.sugs{display:flex;flex-wrap:wrap;gap:6px;margin-top:6px}.sugs button{display:flex;align-items:center;gap:6px;height:38px;padding:0 12px;border-radius:19px;background:var(--v2);color:var(--v);font-weight:700;font-size:13.5px}
+.flat.num2{width:84px;flex:none;text-align:right;font-weight:700}
+.frow .u{font-size:12px;color:var(--sub)}
+.frow .pos{font-size:12.5px;color:var(--sub)}
+.frow .chipset{margin:0;flex-wrap:wrap}
+.sws{display:flex;gap:6px;flex-wrap:wrap}.sws button{width:28px;height:28px;border-radius:14px;border:2px solid #fff;box-shadow:0 0 0 1px var(--line)}.sws button.on{box-shadow:0 0 0 2px var(--v)}
+.addgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(110px,1fr));gap:8px;margin-top:6px}
+.addgrid button{display:flex;flex-direction:column;align-items:center;gap:4px;padding:12px 6px;border:1px solid var(--line);border-radius:14px;background:#fff;font-size:13px;font-weight:600}
+.addgrid button span{font-size:24px}
+.rvwrap.chk{background:repeating-conic-gradient(#eee 0 25%,#fff 0 50%) 0 0/16px 16px}
+.proj.obj.gone{opacity:.55}
+.sb.app{background:#eef1f5;color:#47546a}.sb.ai{background:var(--v2);color:var(--v)}
+.proj .go{color:#9b93b3;font-size:20px}
 .timebar .yr .xb{width:28px;height:28px}
 .timebar .ticks i{cursor:pointer}
 .timebar .ticks i.now{background:var(--v);width:10px;height:10px;top:1px;margin-left:-5px;border-radius:5px}
@@ -525,13 +551,13 @@ input::placeholder,textarea::placeholder{color:#8d86a3}
 <script type="importmap">{"imports":{"three":"./lib/three.module.min.js","three/addons/":"./lib/addons/"}}</script>
 </head>
 <body>
-<nav class="tabs"><a href="#renovation" id="t1">Renovation</a><a href="#journeys" id="t2">All 10 journeys</a><span class="ver">v5.5</span></nav>
+<nav class="tabs"><a href="#renovation" id="t1">Renovation</a><a href="#journeys" id="t2">All 10 journeys</a><span class="ver">v5.6</span></nav>
 
 <section class="view" id="reno">
   <div id="map">
     <canvas id="c"></canvas>
     <div id="tags"></div>
-    <div class="pop" id="pop"></div>
+    <div class="pop" id="pop"></div><div id="handles"></div><div class="planbar" id="planbar"><span>📐 <b>Plan view</b> · drag things · pull ◢ to resize</span><button id="pbAdd">＋ Add</button><button id="pbDone">Done</button></div>
     <div class="hd">
       <div class="bar"><button class="ib back" id="backB" aria-label="Back">←<span class="bt" id="backT"></span></button><button class="crumb" id="titleSw" aria-label="Switch home or project"><span id="homeIc">🏡</span><span class="hn" id="homeName">Main house</span><span class="sep" id="crSep">›</span><b id="ptitle">Everything</b><span class="car">▾</span></button>
       <div class="tools"><button class="ib" id="timeB" aria-label="The house through time" title="The house through time"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="13" r="8"/><path d="M12 9v4l2.5 2.5M9 2h6"/></svg><span class="tl">History</span></button><button class="ib" id="xray" aria-label="X-ray: what’s hidden" title="X-ray: what’s hidden"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="13" height="13" rx="2"/><rect x="8" y="8" width="13" height="13" rx="2" stroke-dasharray="2 2.5"/></svg><span class="tl">X-ray</span></button><button class="ib" id="shareB" aria-label="Share" title="Share"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round"><path d="M12 15V3M7 8l5-5 5 5"/><path d="M5 12v7a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-7"/></svg><span class="tl">Share</span></button><button class="ib" id="exportB" aria-label="Export" title="Export"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v12M7 10l5 5 5-5"/><path d="M4 17v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-2"/></svg><span class="tl">Export</span></button></div></div>
@@ -556,6 +582,6 @@ input::placeholder,textarea::placeholder{color:#8d86a3}
 <div class="full" id="full"><div class="fh"><button class="x" id="fBack" aria-label="Back">←</button><b id="fTitle"></b><span id="fAct"></span></div><div class="fb" id="fBody"></div></div>
 <input type="file" id="fileIn" accept="image/*" hidden>
 <div class="modal" id="modal"><div class="mcard" id="mcard"></div></div>
-<script type="module" src="./app.1795581887.js"></script>
+<script type="module" src="./app.1795583962.js"></script>
 </body>
 </html>
