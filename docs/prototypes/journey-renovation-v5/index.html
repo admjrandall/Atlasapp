@@ -1,6 +1,7 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
+<meta http-equiv="Cache-Control" content="no-cache">
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1">
 <title>Home renovations</title>
@@ -488,6 +489,7 @@ input::placeholder,textarea::placeholder{color:#8d86a3}
 .hrow{display:flex;gap:8px;margin:-4px 0 12px}
 .hrow button{flex:1;display:flex;align-items:center;gap:10px;background:#fff;border:1px solid var(--line);border-radius:16px;padding:8px 10px;text-align:left;min-width:0}
 .hrow img,.hrow .ph{width:44px;height:34px;border-radius:8px;object-fit:cover;flex:none;background:var(--v2);display:grid;place-items:center;font-size:18px}
+.hrow button.hi{border-color:var(--v);background:var(--v2)}
 .hrow b{display:block;font-size:14px}.hrow small{display:block;font-size:12px;color:var(--sub);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .hrow span:last-child{min-width:0}
 .rvseg{margin-bottom:10px}
@@ -507,6 +509,7 @@ input::placeholder,textarea::placeholder{color:#8d86a3}
 .sb.record{background:var(--ok2);color:var(--ok)}.sb.outline{background:#e3eefb;color:#2f6fb0}.sb.you{background:var(--v2);color:var(--v)}.sb.est{background:var(--amb2);color:var(--amber)}.sb.photo{background:#e3f4f4;color:#2a8080}
 .legend2{display:flex;gap:12px;flex-wrap:wrap;font-size:12px;color:var(--sub);margin-top:6px}.legend2 i{display:inline-block;width:12px;height:12px;border-radius:3px;border:1.4px solid transparent;margin-right:5px;vertical-align:-2px}
 .lnk{color:var(--v);font-weight:700;text-decoration:underline;padding:0}
+.tabs{position:relative}.ver{position:absolute;right:8px;bottom:-14px;font-size:10px;color:#9b93b3;font-weight:700}
 .timebar .yr .xb{width:28px;height:28px}
 .timebar .ticks i{cursor:pointer}
 .timebar .ticks i.now{background:var(--v);width:10px;height:10px;top:1px;margin-left:-5px;border-radius:5px}
@@ -522,7 +525,7 @@ input::placeholder,textarea::placeholder{color:#8d86a3}
 <script type="importmap">{"imports":{"three":"./lib/three.module.min.js","three/addons/":"./lib/addons/"}}</script>
 </head>
 <body>
-<nav class="tabs"><a href="#renovation" id="t1">Renovation</a><a href="#journeys" id="t2">All 10 journeys</a></nav>
+<nav class="tabs"><a href="#renovation" id="t1">Renovation</a><a href="#journeys" id="t2">All 10 journeys</a><span class="ver">v5.5</span></nav>
 
 <section class="view" id="reno">
   <div id="map">
@@ -553,6 +556,6 @@ input::placeholder,textarea::placeholder{color:#8d86a3}
 <div class="full" id="full"><div class="fh"><button class="x" id="fBack" aria-label="Back">←</button><b id="fTitle"></b><span id="fAct"></span></div><div class="fb" id="fBody"></div></div>
 <input type="file" id="fileIn" accept="image/*" hidden>
 <div class="modal" id="modal"><div class="mcard" id="mcard"></div></div>
-<script type="module" src="./app.1795581413.js"></script>
+<script type="module" src="./app.1795581887.js"></script>
 </body>
 </html>
