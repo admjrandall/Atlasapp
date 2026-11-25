@@ -62,7 +62,8 @@ fun AtlasRoot(vm: AtlasViewModel, locked: MutableStateFlow<Boolean>) {
                         CompositionLocalProvider(LocalWide provides wide) {
                             Box(Modifier.fillMaxSize()) {
                                 AnimatedContent(route, transitionSpec = { fadeIn() togetherWith fadeOut() }, label = "route", modifier = Modifier.fillMaxSize()) { r -> RouteContent(vm, snap, r) }
-                                val inputHere = route == Route.Home || route is Route.Space || route is Route.Item
+                                val journeyCover by vm.journeyCover.collectAsState()
+                                val inputHere = route == Route.Home || route is Route.Space || route is Route.Item || (route is Route.Journey && !journeyCover)
                                 val selObj = if (route is Route.Space) sel?.let { snap.objects[it] } else null
                                 Box(Modifier.align(Alignment.BottomCenter).fillMaxWidth().windowInsetsPadding(WindowInsets.navigationBars).padding(horizontal = pad).padding(bottom = 14.dp).widthIn(max = 760.dp)) {
                                     when {
@@ -95,6 +96,8 @@ private fun RouteContent(vm: AtlasViewModel, snap: Snapshot, r: Route) {
         Route.Home -> HomeScreen(vm, snap)
         is Route.Space -> if (r.space == Board.SPACES_KEY) com.jmr.atlas.ui.six.AllSpacesScreen(vm, snap) else SpaceScreen(vm, snap, r.space)
         is Route.Item -> ItemScreen(vm, snap, r.id)
+        is Route.Journey -> com.jmr.atlas.ui.journey.JourneyScreen(vm, snap, r.space)
+        is Route.JourneyStart -> com.jmr.atlas.ui.journey.StartScreen(vm, snap, r.space)
         Route.Review -> narrowPage { ReviewScreen(vm, snap) }
         Route.Settings -> narrowPage { SettingsScreen(vm, snap) }
         Route.Integrations -> narrowPage { IntegrationsScreen(vm, snap) }

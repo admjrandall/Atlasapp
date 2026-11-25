@@ -13,7 +13,7 @@ Tell or ask Atlas anything in one box: a name finds things, a sentence files the
 
 ## Build
 
-Requirements: JDK 17, Android SDK (compileSdk 37), minSdk 26.
+Requirements: JDK 21 (Robolectric SDK 36 needs it), Android SDK (compileSdk 37), minSdk 26.
 
 ```bash
 ./gradlew testDebugUnitTest      # Robolectric UI + screenshot tests
@@ -28,4 +28,4 @@ Release builds are signed only when a `keystore.properties` (with `storeFile`, `
 - [Threat model](docs/THREAT-MODEL.md) · [Test plan](docs/TEST-PLAN.md)
 - [Build ledger](docs/LEDGER.md): what was asked, what changed, and which test covers it, per release
 
-Current version: 0.7.1.
+Current version: 0.8.0.

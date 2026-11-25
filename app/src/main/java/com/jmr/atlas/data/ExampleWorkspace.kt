@@ -75,6 +75,12 @@ object ExampleWorkspace {
             d(estimate, DetailKind.FACT, "Estimate number", "EST-2026-0118", flag = true, extra = "Read from the document")))
         repo.putDetail(d(link, DetailKind.HIGHLIGHT, "", "Leave at least 42 inches between the island and the counters."))
 
+        // Home Renovation as a Trail journey (Journeys); its board stays one tap away
+        val stops = listOf("Plan & design", "Quotes", "Demolition", "Build", "Finish").mapIndexed { i, n ->
+            Part(newId(), n, when (i) { 0 -> PartState.DONE; 1 -> PartState.HERE; else -> PartState.LATER }, i) }
+        repo.setJourney(Journey(home.id, Shape.TRAIL, "", stops))
+        listOf(plan to 0, link to 0, oak to 0, estimate to 1, quotes to 1, jamie to 1, demo to 2).forEach { (o, i) -> repo.placeInPart(home.id, o.id, stops[i].id) }
+
         // a recent voice note, connected automatically (shows “Just captured” on Now)
         val cap = repo.captureText("Jamie said the cabinets ship in three weeks. He'll send the updated estimate Friday.", voice = true)
         repo.snap.captures.firstOrNull { it.id == cap }?.noteId?.let { id -> repo.snap.objects[id]?.let { repo.update(it.copy(origin = ex), "Example") } }

@@ -20,6 +20,16 @@ class Settings(private val p: SharedPreferences) {
     private fun b(k: String, def: Boolean) = p.getBoolean(k, def)
     private fun setB(k: String, v: Boolean) { p.edit().putBoolean(k, v).apply(); bump() }
 
+    /** Spaces shown in the Focus view instead of the 0.7 board (0.7.3). Board stays the default; this is per space. */
+    var focusSpaces: Set<String> get() = p.getStringSet("focus_spaces", emptySet())!!.toSet(); set(v) { p.edit().putStringSet("focus_spaces", v).apply(); bump() }
+
+    /** Journey templates (JSON array of {name, shape, parts[]}). */
+    var templatesJson: String get() = p.getString("journey_templates", "[]").orEmpty(); set(v) { p.edit().putString("journey_templates", v).apply(); bump() }
+    /** Spaces where "Make this a journey?" was dismissed. */
+    var journeyOfferOff: Set<String> get() = p.getStringSet("journey_offer_off", emptySet())!!.toSet(); set(v) { p.edit().putStringSet("journey_offer_off", v).apply(); bump() }
+    /** Journeys locked behind the fingerprint (space ids). */
+    var lockedJourneys: Set<String> get() = p.getStringSet("locked_journeys", emptySet())!!.toSet(); set(v) { p.edit().putStringSet("locked_journeys", v).apply(); bump() }
+
     var autoConnect: Boolean get() = b("auto_connect", true); set(v) = setB("auto_connect", v)
     var offerClipboard: Boolean get() = b("offer_clip", true); set(v) = setB("offer_clip", v)
     var briefingOn: Boolean get() = b("brief_on", true); set(v) = setB("brief_on", v)

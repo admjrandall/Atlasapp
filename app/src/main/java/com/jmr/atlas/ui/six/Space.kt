@@ -73,6 +73,9 @@ fun SpaceScreen(vm: AtlasViewModel, snap: Snapshot, key: String) {
     if (project == null && kind == null) { LaunchedEffect(Unit) { vm.back() }; return }
     val bands = remember(snap, key) { if (project != null) Board.bands(snap, project.id, today) else Board.kindBands(snap, kind!!, today) }
     val sel by vm.boardSel.collectAsState()
+    val settingsV by vm.settings.version.collectAsState()
+    // Board (0.7) is the default; Focus is an option per project space, remembered (0.7.3)
+    val focusOn = remember(settingsV, key) { project != null && project.id in vm.settings.focusSpaces }
     val hl by vm.highlight.collectAsState()
     if (project != null) LaunchedEffect(project.id, bands.size) { vm.nameBands(project.id) }
 
@@ -123,16 +126,28 @@ fun SpaceScreen(vm: AtlasViewModel, snap: Snapshot, key: String) {
         var origin by remember { mutableStateOf(Offset.Zero) }
         Box(Modifier.weight(1f).fillMaxWidth()) {
             Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(horizontal = pad).padding(top = 12.dp, bottom = 150.dp)) {
+                if (project != null) {
+                    val hasJourney = Journeys.of(snap, project.id) != null
+                    ViewSwitch(focusOn, Modifier.padding(start = 4.dp, bottom = 10.dp), onJourney = { vm.go(if (hasJourney) Route.Journey(project.id) else Route.JourneyStart(project.id)) }) { on ->
+                        vm.settings.focusSpaces = if (on) vm.settings.focusSpaces + project.id else vm.settings.focusSpaces - project.id
+                    }
+                    // "Make this a journey?" (spec §4.1): offered once a space holds a few things, never again after "Not now"
+                    if (!hasJourney && project.id !in vm.settings.journeyOfferOff && JourneyItems.inSpace(snap, project.id).size >= 3)
+                        JourneyOffer(ShapePick.pick(snap, project.id).shape == Shape.REMEMBER, { vm.go(Route.JourneyStart(project.id)) }) { vm.settings.journeyOfferOff = vm.settings.journeyOfferOff + project.id }
+                }
                 if (project != null && bands.isNotEmpty()) {
                     val anyAi = bands.any { it.nameOrigin == Origin.AI }
-                    AtlasDid(when { anyAi && wide -> "Grouped and named by Atlas · tap a name to change it"; anyAi -> "Named by Atlas · tap a name to change it"
+                    AtlasDid(when { focusOn && selected != null -> "Focus · everything linked to it, and how"
+                        focusOn -> "Hold a card to focus on what it’s linked to"
+                        anyAi && wide -> "Grouped and named by Atlas · tap a name to change it"; anyAi -> "Named by Atlas · tap a name to change it"
                         wide -> "Grouped by who and what they’re about · most urgent first"; else -> "Grouped by who and what · most urgent first" }, Modifier.padding(start = 4.dp, bottom = 10.dp))
                 }
                 if (bands.isEmpty()) Empty(project != null)
-                Box(Modifier.fillMaxWidth().onGloballyPositioned { origin = it.positionInRoot() }) {
+                if (focusOn && selected != null) FocusView(vm, snap, selected, onBoard, today, wide)
+                else Box(Modifier.fillMaxWidth().onGloballyPositioned { origin = it.positionInRoot() }) {
                     Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
                         bands.forEach { b ->
-                            BandView(vm, b, project, wide, today, selected, related, ringed, expanded[b.key] == true, { expanded[b.key] = !(expanded[b.key] ?: false) }) { id, c ->
+                            BandView(vm, b, project, wide, today, selected, related, ringed, focusOn, expanded[b.key] == true, { expanded[b.key] = !(expanded[b.key] ?: false) }) { id, c ->
                                 val p = c.positionInRoot(); rects[id] = Rect(p.x, p.y, p.x + c.size.width, p.y + c.size.height)
                             }
                         }
@@ -144,6 +159,80 @@ fun SpaceScreen(vm: AtlasViewModel, snap: Snapshot, key: String) {
     }
     }
     // the dark caption bar replaces the input box while something is selected (Root draws it)
+}
+
+/** Board · Focus switch at the top of a project space. Board is the 0.7 board, unchanged. */
+@Composable
+private fun ViewSwitch(focusOn: Boolean, modifier: Modifier, onJourney: () -> Unit, onChange: (Boolean) -> Unit) {
+    Row(modifier.clip(RoundedCornerShape(20.dp)).background(Atlas.Chip).padding(3.dp).testTag("view_switch")) {
+        listOf(false to "Board", true to "Focus").forEach { (v, label) ->
+            Box(Modifier.heightIn(min = 40.dp).clip(RoundedCornerShape(18.dp)).background(if (focusOn == v) Atlas.DeepPlum else Color.Transparent)
+                .clickable(role = Role.Tab) { onChange(v) }.padding(horizontal = 16.dp).testTag("view_$label"), contentAlignment = Alignment.Center) {
+                Text(label, style = T.metaStrong.copy(fontSize = 14.sp), color = if (focusOn == v) Color.White else Atlas.DeepPlum)
+            }
+        }
+        Box(Modifier.heightIn(min = 40.dp).clip(RoundedCornerShape(18.dp)).clickable(role = Role.Tab) { onJourney() }.padding(horizontal = 16.dp).testTag("view_Journey"),
+            contentAlignment = Alignment.Center) { Text("Journey", style = T.metaStrong.copy(fontSize = 14.sp), color = Atlas.DeepPlum) }
+    }
+}
+
+@Composable
+private fun JourneyOffer(grief: Boolean, onYes: () -> Unit, onNo: () -> Unit) =
+    Column(Modifier.padding(bottom = 12.dp).fillMaxWidth().clip(RoundedCornerShape(20.dp)).background(Atlas.PrimaryContainer.copy(alpha = 0.55f)).padding(14.dp).testTag("journey_offer")) {
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            Icon(Icons.Outlined.AutoAwesome, null, Modifier.size(15.dp).padding(top = 3.dp), tint = Atlas.Primary)
+            Text(if (grief) "Would you like to keep this somewhere, with your own photos and messages?" else "Make this a journey? I’ll give it a shape and place what’s here.",
+                style = T.body.copy(fontSize = 15.sp), color = Atlas.DeepPlum)
+        }
+        Row(Modifier.padding(top = 10.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            Text(if (grief) "Keep it" else "Make a journey", style = T.metaStrong.copy(fontSize = 14.sp), color = Color.White, modifier = Modifier.heightIn(min = 44.dp).clip(RoundedCornerShape(22.dp))
+                .background(Atlas.Primary).clickable(role = Role.Button) { onYes() }.padding(horizontal = 18.dp, vertical = 12.dp).testTag("offer_yes"))
+            Text("Not now", style = T.meta.copy(fontSize = 14.sp), color = Atlas.DeepPlum, modifier = Modifier.heightIn(min = 44.dp).clip(RoundedCornerShape(22.dp))
+                .background(Color.White).clickable(role = Role.Button) { onNo() }.padding(horizontal = 16.dp, vertical = 12.dp).testTag("offer_no"))
+        }
+    }
+
+/**
+ * Focus (0.7.3, optional view): instead of lines across the whole board, the held card moves to the top and everything linked to it is
+ * listed in labelled lanes ("Assigned to", "Blocks"…); the rest of the space folds into one line. Hold another card to
+ * refocus; "All groups" (or Back) returns to the bands.
+ */
+@Composable
+private fun FocusView(vm: AtlasViewModel, snap: Snapshot, selected: String, onBoard: Set<String>, today: LocalDate, wide: Boolean) {
+    val o = snap.objects[selected] ?: return
+    val f = remember(snap, selected, onBoard) { Board.focus(snap, selected, onBoard) }
+    val cols = if (wide) 3 else 2
+    val tileH = if (wide) 104.dp else 116.dp
+    Column(Modifier.fillMaxWidth().testTag("focus"), verticalArrangement = Arrangement.spacedBy(14.dp)) {
+        Box(Modifier.heightIn(min = 40.dp).clip(RoundedCornerShape(20.dp)).background(Atlas.Chip).clickable(role = Role.Button, onClickLabel = "Back to all groups") { vm.select(selected) }
+            .padding(horizontal = 16.dp).testTag("focus_back"), contentAlignment = Alignment.Center) {
+            Text("← All groups", style = T.metaStrong.copy(fontSize = 14.sp), color = Atlas.DeepPlum)
+        }
+        Tile(vm, o, today, TileState.Selected, Modifier.fillMaxWidth().height(tileH))
+        if (f.lanes.isEmpty()) Text("Nothing else in this space is linked to it yet.", style = T.body, color = Atlas.SecondaryText, modifier = Modifier.testTag("focus_empty"))
+        f.lanes.forEach { lane ->
+            Row(Modifier.fillMaxWidth().testTag("focus_lane")) {
+                Box(Modifier.padding(top = 5.dp).size(10.dp).clip(CircleShape).background(Atlas.Primary))
+                Spacer(Modifier.width(10.dp))
+                Column(Modifier.weight(1f)) {
+                    Text(lane.label, style = T.metaStrong.copy(fontSize = 14.sp), color = Atlas.Primary)
+                    lane.evidence?.let { Text("“${it.take(120)}”", style = T.meta, color = Atlas.SecondaryText, maxLines = 2, overflow = TextOverflow.Ellipsis) }
+                    Spacer(Modifier.height(8.dp))
+                    Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                        lane.items.chunked(cols).forEach { row ->
+                            Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                                row.forEach { Tile(vm, it, today, TileState.Normal, Modifier.weight(1f).height(tileH)) }
+                                repeat(cols - row.size) { Spacer(Modifier.weight(1f)) }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        if (f.folded > 0) Text(if (f.folded == 1) "1 other thing in this space isn’t connected to it. It’s folded away." else "${f.folded} other things in this space aren’t connected to it. They’re folded away.",
+            style = T.meta.copy(fontSize = 14.sp), color = Atlas.SecondaryText,
+            modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(16.dp)).background(Atlas.Chip).padding(horizontal = 14.dp, vertical = 10.dp).testTag("focus_folded"))
+    }
 }
 
 @Composable
@@ -224,7 +313,7 @@ private fun RibbonLine(marks: List<Board.Mark>, today: LocalDate) {
 @Composable
 private fun BandView(
     vm: AtlasViewModel, b: Board.Band, project: KObject?, wide: Boolean, today: LocalDate,
-    selected: String?, related: Set<String>, ringed: Set<String>?, expanded: Boolean, onToggle: () -> Unit,
+    selected: String?, related: Set<String>, ringed: Set<String>?, focusOn: Boolean, expanded: Boolean, onToggle: () -> Unit,
     place: (String, LayoutCoordinates) -> Unit,
 ) {
     val tint = if (b.key == "t:Late") Atlas.BandLate else Atlas.BandNeutral   // color is state, not decoration (0.7)
@@ -243,6 +332,9 @@ private fun BandView(
         // unfolded: name and status on one line; cover screen: status under the name, so neither is cut off
         if (wide) Row(Modifier.fillMaxWidth().padding(start = 4.dp, end = 4.dp, bottom = 10.dp, top = 2.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) { header(); status() }
         else Column(Modifier.fillMaxWidth().padding(start = 4.dp, end = 4.dp, bottom = 10.dp, top = 2.dp)) { header(); status() }
+        val why = if (focusOn) Board.why(b) else ""
+        if (why.isNotBlank()) Text(why, style = T.meta, color = Atlas.SecondaryText, maxLines = 2, overflow = TextOverflow.Ellipsis,
+            modifier = Modifier.padding(start = 4.dp, end = 4.dp, bottom = 10.dp).offset(y = (-4).dp).testTag("band_why"))
         val cap = if (wide) 8 else 6
         val items = if (expanded || b.items.size <= cap + 1) b.items else b.items.take(cap)
         val more = b.items.size - items.size

@@ -266,6 +266,33 @@ class Repository(context: Context, dbName: String? = "atlas.db", encrypted: Bool
     fun deleteDetail(id: String) = write { d -> snap.details.firstOrNull { it.id == id }?.let { with(d) { deleteDetail(id) } } }
 
     /** Replaces all details of the given kinds for one object (used by editors and contact sync) in one transaction. */
+    /** Save a space's journey (shape + parts). The space's items and links are not touched. */
+    fun setJourney(j: Journey, note: String? = null) = replaceDetails(j.spaceId, setOf(DetailKind.SHAPE, DetailKind.PART), Journeys.details(j), note)
+    /** Put an item in a part of its space's journey. */
+    fun placeInPart(spaceId: String, itemId: String, partId: String) =
+        replaceDetails(spaceId, setOf(DetailKind.PLACE), JourneyItems.placeDetails(snap, spaceId, itemId, partId))
+    /** Save a journey's skeleton (shape + part names, never items) as a template. Kept in settings, newest first. */
+    fun saveTemplate(name: String, j: Journey) {
+        val arr = org.json.JSONArray(settings.templatesJson)
+        val keep = (0 until arr.length()).map { arr.getJSONObject(it) }.filter { it.optString("name") != Journeys.clean(name) }
+        val out = org.json.JSONArray().put(org.json.JSONObject().put("name", Journeys.clean(name)).put("shape", j.shape.name)
+            .put("parts", org.json.JSONArray(j.parts.map { it.name })))
+        keep.forEach { out.put(it) }
+        settings.templatesJson = out.toString()
+    }
+    fun templates(): List<Pair<String, Journey>> = runCatching {
+        val arr = org.json.JSONArray(settings.templatesJson)
+        (0 until arr.length()).mapNotNull { k ->
+            val o = arr.getJSONObject(k); val sh = Shape.of(o.optString("shape")) ?: return@mapNotNull null
+            val names = o.optJSONArray("parts")?.let { a -> (0 until a.length()).map { a.getString(it) } }.orEmpty()
+            o.optString("name") to Journey("", sh, sh.styles.firstOrNull().orEmpty(), names.mapIndexed { n, nm ->
+                Part(newId(), nm, if (sh.finishes && n == 0) PartState.HERE else PartState.LATER, n) })
+        }
+    }.getOrDefault(emptyList())
+
+    /** Remove a space's journey; the space and everything in it stay, shown on the board as before. */
+    fun clearJourney(spaceId: String) = replaceDetails(spaceId, setOf(DetailKind.SHAPE, DetailKind.PART), emptyList(), "journey removed")
+
     fun replaceDetails(objectId: String, kinds: Set<DetailKind>, list: List<Detail>, note: String? = null) = write { d ->
         with(d) {
             snap.details.filter { it.objectId == objectId && it.kind in kinds }.forEach { deleteDetail(it.id) }

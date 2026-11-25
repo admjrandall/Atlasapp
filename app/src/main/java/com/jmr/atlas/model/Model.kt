@@ -43,6 +43,12 @@ enum class DetailKind(val label: String, val toContact: Boolean = false) {
     BAND("Band name"),
     /** A space's look (design 0.7): value = "<color>:<icon>" names from SpaceLook. */
     LOOK("Look"),
+    /** A space's journey shape (0.7.4): value = Shape name, extra = style (Remember: ROOM/GARDEN/LETTER). One per space. */
+    SHAPE("Journey shape"),
+    /** A part of a journey (stop, branch, chapter…): label = part id, value = name, extra = PartState name, sort = order. */
+    PART("Journey part"),
+    /** Where an item sits in its space's journey: objectId = space, label = item id, value = part id. */
+    PLACE("Journey place"),
 }
 
 /** The ten custom field types (design I06). SECRET is a flag, not a type: any text-like value can be masked. */

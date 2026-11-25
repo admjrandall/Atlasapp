@@ -2,6 +2,34 @@
 
 Honest status. "Verified" = automated test or inspected screenshot (Robolectric). Nothing has run on a physical Fold 6 yet; items marked **device-only** can only be proven there.
 
+## 0.8.0 — Journeys
+
+| Asked | Done | Test |
+|---|---|---|
+| Journeys as approved (canvas page Journeys v2, spec docs/JOURNEYS-SPEC.md) | Any space can become a journey; the board stays (switch: Board · Focus · Journey). Ten shapes with their own scenes: Trail, Living Tree, Remember (Keepsake Room / Memory Garden / Living Letter), Crossroads, River, Orbit, Shelf, Voyage, Climb, Countdown. Tap a part → sheet with its piles, Atlas's line and the one action that moves it on (move on, grow a branch, rule out / choose, close a cycle…), with Undo. Piles open in **Lens** (fan of big tiles, best first, near-duplicates folded into "+N"; item viewer for photos, PDFs with facts pulled out, links, notes, people, tasks, dates; previous/next; "Ask about this…"). New things added while a journey is open get "This fits X" with other parts to pick. Pencil → shape and parts: rename, reorder, add, remove, set state, change shape (items stay), Remember style, the day (Countdown/Orbit), sources, save as template, fingerprint lock, back to the board. Finishing: memory / decision / next cycle / album. Start: "Make this a journey?" on a space with a few things (gentle wording for remembering), shape pick with its reason and every other shape one tap away, sources step, or New journey from Home (name → suggested shape, or a template). Home lists journeys with animated mini shapes. Example: Home Renovation is a Trail | `JourneyTest` (14), `JourneyUiTest` (7) |
+| The input bar covered journey overlays | Hidden while Lens, the editor, finishing or adding is open | `JourneyUiTest` |
+
+## Journeys phase 2 — journey data
+
+| Asked | Done | Test |
+|---|---|---|
+| Journeys (spec) need a place to live | `model/Journey.kt`: ten `Shape`s (Remember with Room/Garden/Letter styles), ordered `Part`s with a state (later/next/here/done), starter parts per shape. Stored as SHAPE/PART details on the space, so no schema change and exports carry them. `Repository.setJourney` / `clearJourney`. Changing shape keeps every item, link and part name. Nothing visible yet; the board is unchanged | `JourneyTest` (7) |
+
+## 0.7.3 — Focus as an option; the board stays
+
+| Asked | Done | Test |
+|---|---|---|
+| Keep the current workspace as an option when adding new views (Nov 24 2026) | Project spaces get a **Board · Focus** switch at the top. **Board** is the 0.7 board, unchanged, and the default. **Focus** (approved mockup S-Focus) adds a one-line reason under each group, and holding a card shows what it's linked to in labelled lanes with the rest folded. The choice is remembered per space | `focusIsAnOptionBoardStaysDefault` |
+
+## 0.7.2 — load the example later, and a visible "+ New space"
+
+| Asked | Done | Test |
+|---|---|---|
+| No seed data after starting empty | Settings → Your data → **Load example workspace** (shown while none is loaded; Remove stays where it was) | `emptyStartCanLoadExampleAndMakeSpace` |
+| No obvious way to add a space | **+ New space** on Home (inner and cover screens) opens the box with "New space " ready | same |
+| Test builds wouldn't update each other | Debug builds are signed with one committed debug key, so each CI APK installs over the last | CI |
+| Roll back 0.8.0 | The 0.8.0 space Focus view and band reasons are removed; boards are back to 0.7.1 behaviour | existing board tests |
+
 ## 0.7.1 — files, cards that look like what they are, the box on the Fold
 
 | Reported | Cause / decision | Fix | Test |

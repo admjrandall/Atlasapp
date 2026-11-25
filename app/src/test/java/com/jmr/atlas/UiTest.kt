@@ -130,6 +130,7 @@ class FoldUiTest {
         rule.example()
         rule.onNodeWithTag("home").assertIsDisplayed()
         rule.shot("f01_home")
+        rule.onNodeWithTag("home").performTouchInput { swipeUp() }; rule.settle()
         rule.onAllNodesWithTag("cover").onFirst().performClick(); rule.settle()
         rule.onNodeWithTag("ribbon").assertExists()
         rule.shot("f02_board")
@@ -309,6 +310,54 @@ class InputUiTest {
         rule.vm { it.go(com.jmr.atlas.ui.Route.Space("p:" + rule.idOf("Home Renovation"))) }
         rule.vm { it.select(rule.idOf("Jamie Carter")) }
         rule.shot("n09_cover_lines")
+    }
+
+    /** 0.7.3: Board stays the default; Focus is an option per space and is remembered. */
+    @Test
+    fun focusIsAnOptionBoardStaysDefault() {
+        rule.example()
+        val pid = rule.idOf("Home Renovation")
+        rule.vm { it.go(com.jmr.atlas.ui.Route.Space("p:$pid")) }
+        rule.onNodeWithTag("view_switch").assertIsDisplayed()
+        rule.onAllNodesWithTag("band_why").assertCountEquals(0)
+        val jamie = rule.idOf("Jamie Carter")
+        rule.vm { it.select(jamie) }
+        rule.onAllNodesWithTag("focus").assertCountEquals(0)
+        rule.onAllNodesWithTag("band").onFirst().assertExists()
+        rule.vm { it.select(jamie) }
+        rule.onNodeWithTag("view_Focus").performScrollTo().performClick(); rule.settle()
+        var fs = emptySet<String>(); rule.vm { fs = it.settings.focusSpaces }; assertTrue(pid in fs)
+        rule.onAllNodesWithTag("band_why").onFirst().assertExists()
+        val snap = rule.repo().snap
+        val onBoard = com.jmr.atlas.data.Board.bands(snap, pid, LocalDate.now()).flatMap { b -> b.items + listOfNotNull(b.anchor) }.map { it.id }.toSet()
+        val f = com.jmr.atlas.data.Board.focus(snap, jamie, onBoard)
+        assertTrue(f.lanes.isNotEmpty() && f.lanes.all { it.label.isNotBlank() && it.items.isNotEmpty() })
+        assertEquals(onBoard.size - 1 - f.lanes.flatMap { l -> l.items.map { it.id } }.toSet().size, f.folded)
+        rule.vm { it.select(jamie) }
+        rule.onNodeWithTag("focus").assertIsDisplayed()
+        rule.shot("n10_focus_option")
+        rule.onNodeWithTag("focus_back").performScrollTo().performClick(); rule.settle()
+        rule.onNodeWithTag("view_Board").performScrollTo().performClick(); rule.settle()
+        rule.vm { fs = it.settings.focusSpaces }; assertTrue(pid !in fs)
+        rule.onAllNodesWithTag("band_why").assertCountEquals(0)
+    }
+
+    /** 0.7.2: starting empty still leaves a way to load the example (Settings) and a visible way to make a space (Home). */
+    @Test
+    fun emptyStartCanLoadExampleAndMakeSpace() {
+        rule.tap("skip_setup")
+        assertEquals(0, rule.repo().snap.objects.values.count { it.origin == Origin.EXAMPLE })
+        rule.onAllNodesWithTag("home_new_space").onFirst().performClick(); rule.settle()
+        rule.onNodeWithTag("catch_input").assertTextContains("New space", substring = true)
+        rule.vm { it.closeCatch() }
+        rule.tap("nav_Settings"); rule.onNodeWithTag("settings").assertIsDisplayed()
+        rule.onNodeWithTag("load_example").performScrollTo().performClick(); rule.settle()
+        assertTrue(rule.repo().snap.objects.values.any { it.origin == Origin.EXAMPLE })
+        val n = rule.repo().snap.objects.size
+        rule.vm { it.loadExample() }
+        assertEquals("loading twice adds nothing", n, rule.repo().snap.objects.size)
+        rule.vm { it.repo.clearExample() }
+        assertEquals("example removes cleanly after a late load", 0, rule.repo().snap.objects.values.count { it.origin == Origin.EXAMPLE })
     }
 
     @Test @Config(sdk = [36], qualifiers = "w707dp-h823dp-port-xhdpi")
