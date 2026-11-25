@@ -1,0 +1,3 @@
+# Renovation journey v4 (Nov 24 2026)
+
+v3 made fully working: sheet peek/half/full with drag; wide-screen side panel; tappable trail steps (mark done, go back, skip, finish into a record); back button + Escape + phone back; Add anything (type/paste/photo/voice sample -> Atlas understood preview -> save to project/part); new renovation and log-a-past-one forms; editable costs, budget, receipts (real photo pick); agreements confirm; notes; real photos pinned to the map; details editors, find a pro; share with roles; export produces a readable binder, spreadsheet, photo set and backup you can copy; add homes; persists in this browser; reset demo.
