@@ -18,16 +18,22 @@ function render() {
     $('#where').textContent = H0.kind;
     $('#scope').textContent = open ? `${open} thing${open === 1 ? '' : 's'} need${open === 1 ? 's' : ''} you` : 'All caught up';
     $('#scopeSub').textContent = L.length ? `${L.filter(q => q.status === 'active').length} in progress · ${L.filter(q => q.status === 'planned').length} planned · ${L.filter(q => q.status === 'done').length} done` : 'No projects yet';
-    $('#detB').style.display = 'none'; $('#four').style.display = 'none'; $('#stepper').innerHTML = '';
-    B.innerHTML = `<div class="ask2"><button id="askB">✦ Ask your house — “what colour is the trim?”</button></div>` + (S.time ? timeListHTML() : '') + (L.length ? weekHTML(L) : '') + (L.length ? `<div class="lh" style="margin-top:6px"><div class="k">ALL PROJECTS</div><button class="addb" id="newR2">＋ New</button></div>` + groupsHTML(L) : `<div class="empty"><b>Nothing here yet</b>Start a renovation, or log one you’ve already done.<div class="row" style="justify-content:center"><button class="btn" id="newR">＋ New renovation</button><button class="btn g" id="pastR">Log a past one</button></div></div>`);
-    bindList(B); $('#askB').addEventListener('click', () => openSwitcher(true));
-    const nr = $('#newR'); if (nr) { nr.addEventListener('click', () => openCatalog('planned')); $('#pastR').addEventListener('click', () => openCatalog('done')); }
-    const nr2 = $('#newR2'); if (nr2) nr2.addEventListener('click', () => openSwitcher());
-    bindWeek(B); B.querySelectorAll('[data-yr]').forEach(b => b.addEventListener('click', () => jumpYear(+b.dataset.yr)));
+    $('#detB').style.display = 'none'; $('#stepper').innerHTML = ''; $('#four').style.display = L.length ? '' : 'none'; $('#four').classList.add('three');
+    if (S.time) S.htab = 'years'; const ht = S.htab || 'week'; const ev = events(S.home);
+    $('#four').innerHTML = [['week', 'Needs you', open ? `${open} open` : 'All clear', open], ['all', 'Projects', `${L.length} total`, 0], ['years', 'Over the years', `${ev.length} events`, 0]].map(([k, l, v, c]) => `<button class="${ht === k ? 'on' : ''}" data-hk="${k}" aria-pressed="${ht === k}"><b>${l}</b><span class="${c ? 'am' : ''}">${v}</span></button>`).join('');
+    $('#four').querySelectorAll('[data-hk]').forEach(x => x.addEventListener('click', () => { S.htab = x.dataset.hk; if (S.time && S.htab !== 'years') setTime(false); else render(); $('#sbody').scrollTop = 0; if (sheetState === 'peek') setSheet('half'); }));
+    const ask = `<div class="ask2"><button id="askB">✦ Ask your house — “what colour is the trim?”</button></div>`;
+    if (!L.length) B.innerHTML = ask + `<div class="empty"><b>Nothing here yet</b>Start a renovation, or log one you’ve already done.<div class="row" style="justify-content:center"><button class="btn" data-new="planned">＋ New renovation</button><button class="btn g" data-new="done">Log a past one</button></div></div>`;
+    else if (ht === 'week') B.innerHTML = ask + weekHTML(L);
+    else if (ht === 'all') B.innerHTML = ask + `<div class="lh"><div class="k">${L.length} PROJECT${L.length === 1 ? '' : 'S'} AT ${esc(H0.name.toUpperCase())}</div><button class="addb" data-newm="1">＋ New</button></div>${newMenuHTML()}` + groupsHTML(L);
+    else B.innerHTML = (S.time ? '' : `<div class="row" style="margin:0 0 10px"><button class="btn" id="tmOn" style="flex:1">🕓 Show it on the house</button></div>`) + timeListHTML();
+    bindList(B); bindNewMenu(B); const ab = $('#askB'); if (ab) ab.addEventListener('click', () => openSwitcher(true));
+    const to = $('#tmOn'); if (to) to.addEventListener('click', () => setTime(true));
+    bindWeek(B); B.querySelectorAll('[data-yr]').forEach(x => x.addEventListener('click', () => jumpYear(+x.dataset.yr)));
     return;
   }
   ['care', 'notes', 'people', 'waiting', 'lines', 'photos', 'agreed', 'needs'].forEach(k => p[k] = p[k] || []);
-  $('#detB').style.display = ''; $('#four').style.display = '';
+  $('#detB').style.display = ''; $('#four').style.display = ''; $('#four').classList.remove('three');
   const stepI = Math.min(p.here, p.stops.length - 1);
   $('#where').textContent = p.status === 'done' ? `Finished ${p.year} · ${p.where}` : p.status === 'planned' ? `Planned ${p.year} · ${p.where}` : `Step ${stepI + 1} of ${p.stops.length} · ${p.where}`;
   $('#scope').textContent = S.area ? p.areas[S.area] : p.name; $('#scopeSub').textContent = S.area ? p.name : `${THINGS[p.thing].place} · ${THINGS[p.thing].name}${p.status === 'done' ? ' · finished ' + p.year : ''}`;
@@ -53,23 +59,27 @@ let reAdd = null;
 function timeListHTML() { const ev = events(S.home); const y = S.year ?? TODAY; return `<div class="card"><div class="k v">${esc(HOMES[S.home].name.toUpperCase())} · OVER THE YEARS</div><div class="hist">${ev.map(e => `<div class="${e.y === y ? 'cur' : ''}"><button data-yr="${e.y}" style="text-align:left;padding:0"><b>${e.y} · ${esc(e.t)}</b></button><small>${esc(e.tn ? e.tn + ' · ' : '')}${esc(e.s)}</small></div>`).join('')}</div><p class="mini">Drag the year above, or tap a line — the house changes to match.</p></div>`; }
 function weekItems(L) { const pr = n => /TODAY/.test(n.k) ? 0 : /DUE|BY |BEFORE/.test(n.k) ? 1 : 2; const it = []; L.filter(q => q.status !== 'done').forEach(q => q.needs.forEach(n => it.push({ q, n, r: pr(n) + (q.status === 'planned' ? 2 : 0) }))); return it.sort((a, b) => a.r - b.r); }
 function weekHTML(L) {
-  const it = weekItems(L); if (!it.length) return `<div class="week"><div class="k v">THIS WEEK</div><p style="margin:4px 0 0;color:var(--sub);font-size:14px">Nothing needs you. Nice.</p></div>`;
-  return `<div class="week"><div class="k v">THIS WEEK · TOP ${Math.min(3, it.length)} OF ${it.length}</div>${it.slice(0, 3).map(({ q, n }) => `<div class="it"><span class="ic">${q.icon}</span><div class="grow"><b>${esc(n.title)}</b><small>${esc(q.name)} · ${esc(n.k.toLowerCase())}</small></div>${n.kind === 'task' ? `<button class="btn g" data-wd="${q.id}|${n.id}">Done</button>` : `<button class="btn" data-wo="${q.id}">Decide</button>`}</div>`).join('')}</div>`;
+  const it = weekItems(L); if (!it.length) return `<div class="empty"><b>Nothing needs you</b>Decisions and dates show up here when they come in.</div>`;
+  const row = ({ q, n }) => `<div class="it"><span class="ic">${q.icon}</span><div class="grow"><b>${esc(n.title)}</b><small>${esc(q.name)} · ${esc(n.k.toLowerCase())}</small></div>${n.kind === 'task' ? `<button class="btn g" data-wd="${q.id}|${n.id}">Done</button>` : `<button class="btn" data-wo="${q.id}">Decide</button>`}</div>`;
+  return `<div class="week"><div class="k v">THIS WEEK</div>${it.slice(0, 3).map(row).join('')}</div>${it.length > 3 ? `<div class="week later"><div class="k">AFTER THAT · ${it.length - 3}</div>${it.slice(3).map(row).join('')}</div>` : ''}`;
 }
 function bindWeek(B) {
   B.querySelectorAll('[data-wd]').forEach(b => b.addEventListener('click', () => { const [pid, nid] = b.dataset.wd.split('|'); const q = P(pid); const k = q.needs.findIndex(x => x.id === nid); const n = q.needs.splice(k, 1)[0]; buzz(12); changed(`${n.title} · done`, () => q.needs.splice(k, 0, n)); }));
   B.querySelectorAll('[data-wo]').forEach(b => b.addEventListener('click', () => go(b.dataset.wo)));
 }
 function histHTML(th) { const T0 = THINGS[th]; if (!T0) return ''; const rows = T0.hist.map(r => ({ ...r })); PROJ.filter(q => q.thing === th).forEach(q => { if (!rows.some(r => r.y === q.year)) rows.push({ y: q.year, t: q.name + (q.status === 'done' ? '' : q.status === 'active' ? ' · in progress' : ' · planned'), s: q.where, id: q.id }); }); rows.sort((a, b) => a.y - b.y); return rows.length ? `<div class="hist">${rows.map(r => `<div>${r.id && r.id !== S.p ? `<button data-p="${r.id}" style="text-align:left;padding:0"><b>${r.y} · ${esc(r.t)} ›</b></button>` : `<b>${r.y} · ${esc(r.t)}</b>`}<small>${esc(r.s)}</small></div>`).join('')}</div>` : '<p class="mini">No history yet.</p>'; }
-function groupsHTML(L) {
-  const g = [['Needs you', L.filter(q => q.status === 'active' && q.needs.length)], ['In progress', L.filter(q => q.status === 'active' && !q.needs.length)], ['Planned', L.filter(q => q.status === 'planned')]];
-  const done = L.filter(q => q.status === 'done').sort((a, b) => b.year - a.year);
-  const row = q => { const n = q.needs.length; return `<button class="proj" data-p="${q.id}"><span class="ic">${q.icon}</span><span style="flex:1;min-width:0"><b>${esc(q.name)}</b><small>${esc(HOMES[q.home].name)} · ${q.status === 'done' ? q.year + ' · ' + esc(q.where) : esc(q.where)}</small></span>${q.status === 'done' ? '<span class="c z">✓</span>' : `<span class="c ${n ? '' : 'z'}">${n || '✓'}</span>`}</button>`; };
-  let h = g.filter(x => x[1].length).map(([t, l]) => `<div class="gh">${t.toUpperCase()}</div>${l.map(row).join('')}`).join('');
-  if (done.length) h += `<div class="gh">DONE</div>` + done.map(row).join('');
+const COL = { done: true };
+function projRow(q) { const n = q.needs.length; return `<button class="proj" data-p="${q.id}"><span class="ic">${q.icon}</span><span style="flex:1;min-width:0"><b>${esc(q.name)}</b><small>${q.home !== S.home ? esc(HOMES[q.home].name) + ' · ' : ''}${q.status === 'done' ? q.year + ' · ' + esc(q.where) : esc(q.where)}</small></span>${q.status === 'done' ? '<span class="c z">✓</span>' : `<span class="c ${n ? '' : 'z'}">${n || '✓'}</span>`}</button>`; }
+function groupsHTML(L, flat) {
+  if (flat) return L.map(projRow).join('');
+  const G = [['needs', 'Needs you', L.filter(q => q.status === 'active' && q.needs.length)], ['prog', 'In progress', L.filter(q => q.status === 'active' && !q.needs.length)], ['plan', 'Planned', L.filter(q => q.status === 'planned')], ['done', 'Done', L.filter(q => q.status === 'done').sort((a, b) => b.year - a.year)]];
+  const h = G.filter(g => g[2].length).map(([k, t, l]) => `<div class="grp ${COL[k] ? 'shut' : ''}"><button class="gh2" data-gk="${k}" aria-expanded="${!COL[k]}"><span class="chev">▾</span><span class="t">${t}</span><em>${l.length}</em></button><div class="gl">${l.map(projRow).join('')}</div></div>`).join('');
   return h || '<div class="empty"><b>No matches</b>Try another word.</div>';
 }
-function bindList(B) { B.querySelectorAll('[data-p]').forEach(b => b.addEventListener('click', () => go(b.dataset.p))); }
+function bindGroups(B) { B.querySelectorAll('[data-gk]').forEach(x => x.addEventListener('click', () => { const k = x.dataset.gk; COL[k] = !COL[k]; B.querySelectorAll(`[data-gk="${k}"]`).forEach(y => { y.closest('.grp').classList.toggle('shut', COL[k]); y.setAttribute('aria-expanded', !COL[k]); }); buzz(5); })); }
+function newMenuHTML() { return `<div class="newmenu" hidden><button data-new="planned"><span class="ic">🛠</span><span><b>Start a renovation</b><small>Plan it, track decisions, costs and photos</small></span></button><button data-new="done"><span class="ic">🕓</span><span><b>Log one already done</b><small>Add it to the house’s history — year, cost, receipts</small></span></button></div>`; }
+function bindNewMenu(B) { B.querySelectorAll('[data-newm]').forEach(x => x.addEventListener('click', () => { const m = B.querySelector('.newmenu'); m.hidden = !m.hidden; x.textContent = m.hidden ? '＋ New' : '✕ Close'; })); B.querySelectorAll('[data-new]').forEach(x => x.addEventListener('click', () => openCatalog(x.dataset.new))); }
+function bindList(B) { B.querySelectorAll('[data-p]').forEach(b => b.addEventListener('click', () => go(b.dataset.p))); bindGroups(B); }
 const lh = (label, add, cls = 'v') => `<div class="lh"><div class="k ${cls}">${label}</div>${add ? `<button class="addb" data-add="${add}">＋ Add</button>` : ''}</div><div class="inlslot" data-slot="${add}"></div>`;
 const moneyIn = v => v ? money(v) : '';
 const numOf = s => { const v = parseFloat(String(s).replace(/[^\d.\-]/g, '')); return isNaN(v) ? null : v; };
@@ -266,20 +276,24 @@ function ask(q) {
 }
 function openSwitcher(focusAsk) {
   full('Homes & projects', () => {
+    const needN = k => projOf(k).reduce((s, q) => s + (q.status === 'done' ? 0 : q.needs.length), 0);
+    const H0 = HOMES[S.home];
     $('#fBody').innerHTML = `<input class="search" id="swQ" placeholder="Ask or search — “when was the roof done?”" aria-label="Ask or search" enterkeyhint="search">
-      <div class="homes" id="swH">${Object.entries(HOMES).map(([k, h]) => { const n = projOf(k).reduce((s, q) => s + (q.status === 'done' ? 0 : q.needs.length), 0); return `<button class="${k === S.home ? 'on' : ''}" data-h="${k}">${h.icon} ${esc(h.name)}${n ? ` · ${n}` : ''}</button>`; }).join('')}<button data-addh="1">＋ Add a home</button></div>
-      <div class="row" style="margin:0 0 12px"><button class="btn" id="swNew" style="flex:1">＋ New renovation</button><button class="btn g" id="swPast" style="flex:1">Log a past one</button></div>
+      <div id="swTop"><button class="homepick" id="swHome" aria-expanded="false"><span class="ic">${H0.icon}</span><span class="grow"><b>${esc(H0.name)}</b><small>${esc(H0.kind)}</small></span><span class="chg">${Object.keys(HOMES).length > 1 ? 'Switch home' : 'Homes'} <i>▾</i></span></button>
+      <div class="homelist" id="swHL" hidden>${Object.entries(HOMES).map(([k, h]) => { const n = needN(k); return `<button data-h="${k}" class="${k === S.home ? 'on' : ''}"><span class="ic">${h.icon}</span><span class="grow"><b>${esc(h.name)}</b><small>${projOf(k).length} project${projOf(k).length === 1 ? '' : 's'}${n ? ` · ${n} need you` : ''}</small></span>${k === S.home ? '<span class="here">Viewing</span>' : '<span class="go">›</span>'}</button>`; }).join('')}<button data-addh="1"><span class="ic">＋</span><span class="grow"><b>Add a home</b><small>House, apartment, cabin, rental…</small></span></button></div>
+      <div class="lh" style="margin-top:14px"><div class="k">PROJECTS</div><button class="addb" data-newm="1">＋ New</button></div>${newMenuHTML()}</div>
       <div id="swA"></div><div id="swL"></div><div class="row" style="margin-top:18px"><button class="btn g" id="rst">Reset demo</button></div>`;
-    const draw = () => { const q = $('#swQ').value.trim(); const A = $('#swA'), L = $('#swL');
-      if (!q) { A.innerHTML = ''; L.innerHTML = `<button class="proj" id="swAll"><span class="ic">${HOMES[S.home].icon}</span><span style="flex:1"><b>Everything at ${esc(HOMES[S.home].name)}</b><small>The whole map</small></span></button>` + groupsHTML(projOf(S.home)); $('#swAll').addEventListener('click', () => go(null)); bindList(L); return; }
+    const draw = () => { const q = $('#swQ').value.trim(); const A = $('#swA'), L = $('#swL'); $('#swTop').style.display = q ? 'none' : '';
+      if (!q) { A.innerHTML = ''; L.innerHTML = groupsHTML(projOf(S.home)); bindList(L); return; }
       const r = ask(q); const top = r[0];
       A.innerHTML = top ? `<div class="answer"><div class="k">✦ FROM YOUR RECORDS</div><h3>${esc(top.a)}</h3><p>${esc(top.k && top.k !== top.a ? top.k + ' · ' : '')}${esc(top.src)}</p>${top.id ? `<div class="row"><button class="btn" data-p="${top.id}">Open ${esc(P(top.id).name)}</button></div>` : ''}</div>${r.length > 1 ? `<div class="gh">ALSO MATCHES</div>${r.slice(1, 6).map(e => `<button class="proj" ${e.id ? `data-p="${e.id}"` : ''}><span class="ic">${e.icon}</span><span style="flex:1;min-width:0"><b>${esc(e.a)}</b><small>${esc(e.k && e.k !== e.a ? e.k + ' · ' : '')}${esc(e.src)}</small></span></button>`).join('')}` : ''}` : `<div class="empty"><b>Nothing in your records yet</b>Try other words — or ask Atlas in the app to look it up online.</div>`;
       const ql = q.toLowerCase(); const PL = PROJ.filter(x => [x.name, x.place, THINGS[x.thing]?.name, x.year, HOMES[x.home].name, ...(x.people || []).map(p => p[0]), ...x.details.map(f => f.v)].join(' ').toLowerCase().includes(ql));
-      L.innerHTML = PL.length ? `<div class="gh">PROJECTS</div>` + groupsHTML(PL).replace(/<div class="gh">[^<]*<\/div>/g, '') : ''; bindList(A); bindList(L); };
+      L.innerHTML = PL.length ? `<div class="gh">PROJECTS</div>` + groupsHTML(PL, true) : ''; bindList(A); bindList(L); };
     $('#swQ').addEventListener('input', draw); $('#swQ').addEventListener('keydown', e => { if (e.key === 'Enter') $('#swQ').blur(); });
-    $('#swH').querySelectorAll('[data-h]').forEach(b => b.addEventListener('click', () => goHome(b.dataset.h)));
-    $('#swH').querySelector('[data-addh]').addEventListener('click', addHome);
-    $('#swNew').addEventListener('click', () => openCatalog('planned')); $('#swPast').addEventListener('click', () => openCatalog('done'));
+    $('#swHome').addEventListener('click', () => { const hl = $('#swHL'); hl.hidden = !hl.hidden; $('#swHome').setAttribute('aria-expanded', !hl.hidden); $('#swHome').classList.toggle('open', !hl.hidden); });
+    $('#swHL').querySelectorAll('[data-h]').forEach(x => x.addEventListener('click', () => goHome(x.dataset.h)));
+    $('#swHL').querySelector('[data-addh]').addEventListener('click', addHome);
+    bindNewMenu($('#swTop'));
     $('#rst').addEventListener('click', () => modal(`<h3>Reset the demo?</h3><p class="mini" style="margin:0">Everything you added or changed in this mockup goes back to the example data.</p><div class="row"><button class="btn danger" id="rY">Reset</button><button class="btn g" id="cx">Cancel</button></div>`, () => { $('#rY').addEventListener('click', resetDemo); $('#cx').addEventListener('click', closeModal); }));
     draw(); if (focusAsk) setTimeout(() => $('#swQ')?.focus(), 80);
   });
